@@ -2,7 +2,10 @@
   "name": "whatsapp-pdf-sender",
   "version": "1.0.0",
   "description": "WhatsApp PDF Sender - MERN Web Application",
+  "main": "server/server.js",
   "scripts": {
+    "start": "node server/server.js",
+    "build": "npm run install:all && npm run build --prefix client",
     "install:all": "npm install --prefix server && npm install --prefix client",
     "server": "npm run dev --prefix server",
     "client": "npm run dev --prefix client",
