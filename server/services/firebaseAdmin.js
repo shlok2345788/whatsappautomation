@@ -1,13 +1,18 @@
 const admin = require('firebase-admin');
 require('dotenv').config();
 
+// Helper: strip accidental JSON string delimiters (e.g. leading/trailing quotes and commas)
+// that can occur when copy-pasting values directly from a JSON file.
+const cleanEnv = (val) => val?.trim().replace(/^"+|"+,?$/g, '');
+
 if (!admin.apps.length) {
+  const privateKey = cleanEnv(process.env.private_key)?.replace(/\\n/g, '\n');
+
   admin.initializeApp({
     credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      // Replace escaped newlines in the private key from env
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      projectId: cleanEnv(process.env.project_id),
+      clientEmail: cleanEnv(process.env.client_email),
+      privateKey,
     }),
   });
 }
