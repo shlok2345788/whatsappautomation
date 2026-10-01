@@ -61,6 +61,7 @@ const initCompanyClient = async (companyId, io) => {
       }),
       puppeteer: {
         headless: true,
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
@@ -68,6 +69,7 @@ const initCompanyClient = async (companyId, io) => {
           '--disable-accelerated-2d-canvas',
           '--no-first-run',
           '--no-zygote',
+          '--single-process',
           '--disable-gpu'
         ]
       }

@@ -16,25 +16,17 @@ db.pragma('journal_mode = WAL');
 
 // Initialize database schema tables with company_id architecture
 const initDatabase = () => {
+  // Drop and recreate tables with TEXT company_id to support Firebase UID strings
   db.exec(`
-    CREATE TABLE IF NOT EXISTS companies (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      company_name TEXT NOT NULL,
-      email TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    );
-
     CREATE TABLE IF NOT EXISTS contacts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      company_id INTEGER NOT NULL,
+      company_id TEXT NOT NULL,
       name TEXT NOT NULL,
       mobile TEXT NOT NULL,
       originalMobile TEXT,
       isValid INTEGER NOT NULL DEFAULT 1,
       statusMessage TEXT DEFAULT 'Valid',
-      createdAt TEXT NOT NULL,
-      FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+      createdAt TEXT NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_contacts_company_mobile ON contacts(company_id, mobile);
@@ -42,7 +34,7 @@ const initDatabase = () => {
 
     CREATE TABLE IF NOT EXISTS pdf_files (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      company_id INTEGER NOT NULL,
+      company_id TEXT NOT NULL,
       originalFilename TEXT NOT NULL,
       extractedName TEXT NOT NULL,
       filePath TEXT NOT NULL,
@@ -50,7 +42,6 @@ const initDatabase = () => {
       fileHash TEXT DEFAULT '',
       matchedContactId INTEGER DEFAULT NULL,
       createdAt TEXT NOT NULL,
-      FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
       FOREIGN KEY (matchedContactId) REFERENCES contacts(id) ON DELETE SET NULL
     );
 
@@ -58,7 +49,7 @@ const initDatabase = () => {
 
     CREATE TABLE IF NOT EXISTS message_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      company_id INTEGER NOT NULL,
+      company_id TEXT NOT NULL,
       contactId INTEGER DEFAULT NULL,
       contactName TEXT NOT NULL,
       phone TEXT NOT NULL,
@@ -69,8 +60,7 @@ const initDatabase = () => {
       status TEXT NOT NULL DEFAULT 'Pending',
       errorReason TEXT DEFAULT '',
       sentAt TEXT DEFAULT NULL,
-      createdAt TEXT NOT NULL,
-      FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+      createdAt TEXT NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_logs_company_status ON message_logs(company_id, status);
@@ -79,12 +69,11 @@ const initDatabase = () => {
 
     CREATE TABLE IF NOT EXISTS settings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      company_id INTEGER NOT NULL UNIQUE,
+      company_id TEXT NOT NULL UNIQUE,
       delayBetweenMessages INTEGER DEFAULT 4,
       messageTemplate TEXT DEFAULT 'Hello {{name}},\n\nPlease find your document attached.\n\nThank you.',
       autoRetryFailed INTEGER DEFAULT 0,
-      updatedAt TEXT NOT NULL,
-      FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+      updatedAt TEXT NOT NULL
     );
   `);
 
