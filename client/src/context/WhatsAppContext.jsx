@@ -20,6 +20,7 @@ export const WhatsAppProvider = ({ children }) => {
       const res = await API.get('/whatsapp/status');
       setStatus(res.data.status || 'DISCONNECTED');
       setQrCode(res.data.qrCode || null);
+      setError(res.data.error || '');
     } catch (err) {
       const message = err.response?.data?.message || 'Unable to fetch WhatsApp status';
       setError(message);

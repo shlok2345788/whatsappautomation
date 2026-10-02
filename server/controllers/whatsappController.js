@@ -5,9 +5,11 @@ const getStatus = async (req, res, next) => {
     const companyId = req.companyId || req.user.id;
     const status = whatsappService.getClientStatus(companyId);
     const qrCode = whatsappService.getQrCode(companyId);
+    const error = whatsappService.getClientError(companyId);
     res.json({
       status,
       qrCode,
+      error,
       isConnected: status === 'CONNECTED'
     });
   } catch (error) {

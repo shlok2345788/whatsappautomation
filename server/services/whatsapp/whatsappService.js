@@ -30,6 +30,11 @@ const getQrCode = (companyId) => {
   return instance.qrCode || null;
 };
 
+const getClientError = (companyId) => {
+  const instance = clientsMap[companyId];
+  return instance?.error || null;
+};
+
 const ensureChromeInstalled = () => {
   let executablePath = puppeteer.executablePath();
   if (fs.existsSync(executablePath)) return executablePath;
@@ -68,6 +73,7 @@ const initCompanyClient = async (companyId, io) => {
     status: 'CONNECTING',
     qrCode: null,
     qrRaw: null,
+    error: null,
     io: io
   };
 
@@ -109,6 +115,7 @@ const initCompanyClient = async (companyId, io) => {
         clientsMap[companyId].status = 'WAITING_QR';
         clientsMap[companyId].qrCode = qrDataUrl;
         clientsMap[companyId].qrRaw = qr;
+        clientsMap[companyId].error = null;
 
         if (io) {
           io.to(roomName).emit('whatsapp:qr', { qrCode: qrDataUrl, status: 'WAITING_QR' });
@@ -123,6 +130,7 @@ const initCompanyClient = async (companyId, io) => {
       console.log(`[WhatsApp company_${companyId}] Authenticated`);
       clientsMap[companyId].status = 'CONNECTING';
       clientsMap[companyId].qrCode = null;
+      clientsMap[companyId].error = null;
       if (io) {
         io.to(roomName).emit('whatsapp:status', { status: 'CONNECTING' });
       }
@@ -140,6 +148,7 @@ const initCompanyClient = async (companyId, io) => {
       console.log(`[WhatsApp company_${companyId}] Client is ready!`);
       clientsMap[companyId].status = 'CONNECTED';
       clientsMap[companyId].qrCode = null;
+      clientsMap[companyId].error = null;
       if (io) {
         io.to(roomName).emit('whatsapp:connected', { status: 'CONNECTED' });
         io.to(roomName).emit('whatsapp:status', { status: 'CONNECTED' });
@@ -150,6 +159,7 @@ const initCompanyClient = async (companyId, io) => {
       console.error(`[WhatsApp company_${companyId}] Auth Failure:`, msg);
       clientsMap[companyId].status = 'DISCONNECTED';
       clientsMap[companyId].qrCode = null;
+      clientsMap[companyId].error = msg;
       if (io) {
         io.to(roomName).emit('whatsapp:disconnected', { status: 'DISCONNECTED', message: msg });
         io.to(roomName).emit('whatsapp:status', { status: 'DISCONNECTED' });
@@ -160,6 +170,7 @@ const initCompanyClient = async (companyId, io) => {
       console.log(`[WhatsApp company_${companyId}] Client disconnected:`, reason);
       clientsMap[companyId].status = 'DISCONNECTED';
       clientsMap[companyId].qrCode = null;
+      clientsMap[companyId].error = reason;
       if (io) {
         io.to(roomName).emit('whatsapp:disconnected', { status: 'DISCONNECTED', reason });
         io.to(roomName).emit('whatsapp:status', { status: 'DISCONNECTED' });
@@ -183,6 +194,7 @@ const initCompanyClient = async (companyId, io) => {
   } catch (error) {
     console.error(`[WhatsApp company_${companyId}] Initialize error:`, error.message);
     clientsMap[companyId].status = 'DISCONNECTED';
+    clientsMap[companyId].error = error.message;
     if (io) {
       io.to(roomName).emit('whatsapp:status', { status: 'DISCONNECTED', error: error.message });
     }
@@ -296,6 +308,7 @@ const sendPdfDocument = async (companyId, phone, pdfPath, filename, caption = ''
 module.exports = {
   getClientStatus,
   getQrCode,
+  getClientError,
   initUserClient: initCompanyClient,
   disconnectUserClient: disconnectCompanyClient,
   checkNumberHasWhatsApp,
