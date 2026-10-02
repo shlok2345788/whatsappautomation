@@ -98,16 +98,30 @@ const getPdfFiles = async (req, res, next) => {
     const companyId = req.companyId;
     const { data: rows, error } = await supabase
       .from('pdf_files')
-      .select('*, contacts(name, mobile)')
+      .select('*')
       .eq('company_id', companyId)
       .order('originalFilename', { ascending: true });
 
     if (error) throw error;
 
+    const matchedContactIds = (rows || [])
+      .map((row) => row.matchedContactId)
+      .filter(Boolean);
+    let contactsById = new Map();
+
+    if (matchedContactIds.length > 0) {
+      const { data: contacts, error: contactsError } = await supabase
+        .from('contacts')
+        .select('*')
+        .in('id', matchedContactIds);
+      if (contactsError) throw contactsError;
+      contactsById = new Map((contacts || []).map((contact) => [String(contact.id), contact]));
+    }
+
     const formatted = (rows || []).map((row) => {
-      const { contacts: contact, ...rest } = row;
+      const contact = contactsById.get(String(row.matchedContactId));
       return {
-        ...rest,
+        ...row,
         matchedContactId: row.matchedContactId && contact
           ? { id: row.matchedContactId, _id: row.matchedContactId, name: contact.name, mobile: contact.mobile }
           : null,

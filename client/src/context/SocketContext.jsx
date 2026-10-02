@@ -11,7 +11,7 @@ export const SocketProvider = ({ children }) => {
   useEffect(() => {
     if (user && user.id) {
       const newSocket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000', {
-        transports: ['websocket', 'polling']
+        transports: ['polling']
       });
 
       newSocket.on('connect', () => {

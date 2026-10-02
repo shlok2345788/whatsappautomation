@@ -130,6 +130,11 @@ class SqliteQueryBuilder {
 
   execute() {
     let whereClause = this.whereConditions.length > 0 ? ` WHERE ${this.whereConditions.join(' AND ')}` : '';
+    
+    // Fix ambiguous column name 'company_id' when joining tables
+    if (whereClause.includes('company_id =')) {
+      whereClause = whereClause.replace(/company_id =/g, `${this.tableName}.company_id =`);
+    }
 
     if (this.operation === 'select') {
       let sqlCols = '*';

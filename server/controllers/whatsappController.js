@@ -30,11 +30,14 @@ const connectWhatsApp = async (req, res, next) => {
   try {
     const companyId = req.companyId || req.user.id;
     const io = req.app.get('io');
-    const result = await whatsappService.initUserClient(companyId, io);
+    const initialization = whatsappService.initUserClient(companyId, io);
+    initialization.catch((error) => {
+      console.error(`[WhatsApp company_${companyId}] Background initialization failed:`, error.message);
+    });
     res.json({
       message: 'WhatsApp client initializing',
-      status: result.status,
-      qrCode: result.qrCode
+      status: 'CONNECTING',
+      qrCode: null
     });
   } catch (error) {
     next(error);

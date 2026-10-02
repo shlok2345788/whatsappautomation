@@ -65,7 +65,7 @@ const Dashboard = () => {
               <div style={{ fontSize: '13px', color: '#b45309' }}>Connect your WhatsApp account by scanning QR code to start sending PDFs.</div>
             </div>
           </div>
-          <Link to="/whatsapp" className="btn btn-primary btn-sm">
+          <Link to="/dashboard/whatsapp" className="btn btn-primary btn-sm">
             <QrCode size={14} /> Connect WhatsApp
           </Link>
         </div>
