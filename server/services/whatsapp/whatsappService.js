@@ -3,6 +3,7 @@ const puppeteer = require('puppeteer');
 const qrcode = require('qrcode');
 const path = require('path');
 const fs = require('fs');
+const { execFileSync } = require('child_process');
 const SupabaseSessionManager = require('./SupabaseSessionManager');
 
 // In-memory store for WhatsApp instances per company
@@ -27,6 +28,28 @@ const getQrCode = (companyId) => {
   const instance = clientsMap[companyId];
   if (!instance) return null;
   return instance.qrCode || null;
+};
+
+const ensureChromeInstalled = () => {
+  let executablePath = puppeteer.executablePath();
+  if (fs.existsSync(executablePath)) return executablePath;
+
+  const serverDir = path.join(__dirname, '../..');
+  console.log(`[WhatsApp] Chrome missing at ${executablePath}; installing browser binary...`);
+  execFileSync('npx', ['puppeteer', 'browsers', 'install', 'chrome'], {
+    cwd: serverDir,
+    env: {
+      ...process.env,
+      PUPPETEER_CACHE_DIR: process.env.PUPPETEER_CACHE_DIR || path.join(serverDir, '.cache', 'puppeteer'),
+    },
+    stdio: 'inherit',
+  });
+
+  executablePath = puppeteer.executablePath();
+  if (!fs.existsSync(executablePath)) {
+    throw new Error(`Chrome installation completed but executable is still missing at ${executablePath}`);
+  }
+  return executablePath;
 };
 
 const initCompanyClient = async (companyId, io) => {
@@ -55,6 +78,7 @@ const initCompanyClient = async (companyId, io) => {
   }
 
   try {
+    const chromeExecutablePath = ensureChromeInstalled();
     const client = new Client({
       authStrategy: new LocalAuth({
         dataPath: sessionsDir,
@@ -62,7 +86,7 @@ const initCompanyClient = async (companyId, io) => {
       }),
       puppeteer: {
         headless: true,
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath(),
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || chromeExecutablePath,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
