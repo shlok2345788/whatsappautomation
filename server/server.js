@@ -28,6 +28,7 @@ const server = http.createServer(app);
 // Configure Socket.IO
 const allowedOrigins = [
   process.env.CLIENT_URL,
+  'https://whatsappautomation-eight.vercel.app',
   'http://localhost:5173',
 ].filter(Boolean);
 

@@ -29,6 +29,13 @@ export const WhatsAppProvider = ({ children }) => {
   }, [fetchStatus]);
 
   useEffect(() => {
+    if (!user || (status !== 'CONNECTING' && status !== 'WAITING_QR')) return undefined;
+
+    const intervalId = window.setInterval(fetchStatus, 2000);
+    return () => window.clearInterval(intervalId);
+  }, [fetchStatus, status, user]);
+
+  useEffect(() => {
     if (!socket) return;
 
     const handleStatus = (data) => {
