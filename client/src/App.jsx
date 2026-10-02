@@ -98,6 +98,8 @@ function AppRoutes() {
         <Route path="settings" element={<Settings />} />
       </Route>
 
+      <Route path="/whatsapp" element={<Navigate to="/dashboard/whatsapp" replace />} />
+
       {/* Catch-all */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
