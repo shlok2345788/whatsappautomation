@@ -4,10 +4,11 @@ import StatusBadge from '../components/StatusBadge';
 import { QrCode, RefreshCw, Power, CheckCircle, Smartphone } from 'lucide-react';
 
 const WhatsAppConnect = () => {
-  const { status, qrCode, loading, connect, disconnect } = useWhatsApp();
+  const { status, qrCode, loading, error, connect, disconnect } = useWhatsApp();
 
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+      {error && <div className="alert alert-danger" style={{ marginBottom: '16px' }}>{error}</div>}
       {/* Connection Flow Bar */}
       <div className="card" style={{ marginBottom: '24px' }}>
         <div className="card-header">

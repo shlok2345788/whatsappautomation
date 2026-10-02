@@ -12,6 +12,7 @@ export const WhatsAppProvider = ({ children }) => {
   const [status, setStatus] = useState('DISCONNECTED');
   const [qrCode, setQrCode] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const fetchStatus = useCallback(async () => {
     if (!user) return;
@@ -20,6 +21,8 @@ export const WhatsAppProvider = ({ children }) => {
       setStatus(res.data.status || 'DISCONNECTED');
       setQrCode(res.data.qrCode || null);
     } catch (err) {
+      const message = err.response?.data?.message || 'Unable to fetch WhatsApp status';
+      setError(message);
       console.error('Error fetching WhatsApp status:', err);
     }
   }, [user]);
@@ -42,6 +45,7 @@ export const WhatsAppProvider = ({ children }) => {
       if (data && data.status) {
         setStatus(data.status);
       }
+      if (data?.error) setError(data.error);
     };
 
     const handleQr = (data) => {
@@ -76,6 +80,7 @@ export const WhatsAppProvider = ({ children }) => {
 
   const connect = async () => {
     setLoading(true);
+    setError('');
     try {
       const res = await API.post('/whatsapp/connect');
       setStatus(res.data.status || 'CONNECTING');
@@ -83,6 +88,7 @@ export const WhatsAppProvider = ({ children }) => {
         setQrCode(res.data.qrCode);
       }
     } catch (err) {
+      setError(err.response?.data?.message || 'WhatsApp initialization failed');
       console.error('Connect WhatsApp failed:', err);
     } finally {
       setLoading(false);
@@ -91,6 +97,7 @@ export const WhatsAppProvider = ({ children }) => {
 
   const disconnect = async (logout = false) => {
     setLoading(true);
+    setError('');
     try {
       const res = await API.post('/whatsapp/disconnect', { logout });
       setStatus(res.data.status || 'DISCONNECTED');
@@ -103,7 +110,7 @@ export const WhatsAppProvider = ({ children }) => {
   };
 
   return (
-    <WhatsAppContext.Provider value={{ status, qrCode, loading, connect, disconnect, fetchStatus }}>
+    <WhatsAppContext.Provider value={{ status, qrCode, loading, error, connect, disconnect, fetchStatus }}>
       {children}
     </WhatsAppContext.Provider>
   );
