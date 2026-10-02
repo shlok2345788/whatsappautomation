@@ -35,22 +35,57 @@ const getClientError = (companyId) => {
   return instance?.error || null;
 };
 
+const findChromeExecutable = (rootDir) => {
+  if (!fs.existsSync(rootDir)) return null;
+
+  const executableNames = process.platform === 'win32'
+    ? new Set(['chrome.exe', 'chromium.exe'])
+    : new Set(['chrome', 'chrome-headless-shell', 'chromium', 'chromium-browser']);
+  const pending = [rootDir];
+
+  while (pending.length > 0) {
+    const currentDir = pending.pop();
+    for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+      const entryPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(entryPath);
+      } else if (executableNames.has(entry.name)) {
+        return entryPath;
+      }
+    }
+  }
+
+  return null;
+};
+
 const ensureChromeInstalled = () => {
   let executablePath = puppeteer.executablePath();
   if (fs.existsSync(executablePath)) return executablePath;
 
   const serverDir = path.join(__dirname, '../..');
+  const cacheDir = process.env.PUPPETEER_CACHE_DIR || path.join(serverDir, '.cache', 'puppeteer');
+  executablePath = findChromeExecutable(cacheDir);
+  if (executablePath) return executablePath;
+
+  const systemExecutable = ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser']
+    .find((candidate) => fs.existsSync(candidate));
+  if (systemExecutable) return systemExecutable;
+
+  executablePath = puppeteer.executablePath();
   console.log(`[WhatsApp] Chrome missing at ${executablePath}; installing browser binary...`);
   execFileSync('npx', ['puppeteer', 'browsers', 'install', 'chrome'], {
     cwd: serverDir,
     env: {
       ...process.env,
-      PUPPETEER_CACHE_DIR: process.env.PUPPETEER_CACHE_DIR || path.join(serverDir, '.cache', 'puppeteer'),
+      PUPPETEER_CACHE_DIR: cacheDir,
     },
     stdio: 'inherit',
   });
 
   executablePath = puppeteer.executablePath();
+  if (!fs.existsSync(executablePath)) {
+    executablePath = findChromeExecutable(cacheDir);
+  }
   if (!fs.existsSync(executablePath)) {
     throw new Error(`Chrome installation completed but executable is still missing at ${executablePath}`);
   }
