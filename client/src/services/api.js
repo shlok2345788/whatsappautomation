@@ -1,33 +1,26 @@
 import axios from 'axios';
+import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase';
 
 const API = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 });
 
-// Helper to get current Firebase user, waiting briefly for auth state initialization on page refresh
+let authStatePromise;
+
 const getCurrentUser = () => {
-  if (auth.currentUser) {
-    return Promise.resolve(auth.currentUser);
-  }
-  return new Promise((resolve) => {
-    let resolved = false;
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (!resolved) {
-        resolved = true;
+  if (auth.currentUser) return Promise.resolve(auth.currentUser);
+
+  if (!authStatePromise) {
+    authStatePromise = new Promise((resolve) => {
+      const unsubscribe = onAuthStateChanged(auth, (user) => {
         unsubscribe();
         resolve(user);
-      }
+      });
     });
-    // Timeout of 1200ms if user is genuinely logged out
-    setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        unsubscribe();
-        resolve(auth.currentUser);
-      }
-    }, 1200);
-  });
+  }
+
+  return authStatePromise;
 };
 
 API.interceptors.request.use(async (config) => {
