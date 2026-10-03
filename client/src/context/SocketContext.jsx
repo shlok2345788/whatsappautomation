@@ -11,7 +11,10 @@ export const SocketProvider = ({ children }) => {
   useEffect(() => {
     if (user && user.id) {
       const newSocket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000', {
-        transports: ['websocket'],
+        // Start with polling so the connection works when Render has not
+        // completed the WebSocket upgrade yet.
+        transports: ['polling', 'websocket'],
+        tryAllTransports: true,
         reconnection: true,
         reconnectionAttempts: Infinity,
         reconnectionDelay: 1000,
@@ -20,6 +23,10 @@ export const SocketProvider = ({ children }) => {
       newSocket.on('connect', () => {
         console.log('Socket connected to backend:', newSocket.id);
         newSocket.emit('join', user.id);  // user.id is UUID from Supabase
+      });
+
+      newSocket.on('connect_error', (error) => {
+        console.error('Socket connection error:', error.message);
       });
 
       setSocket(newSocket);

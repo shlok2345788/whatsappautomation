@@ -4,7 +4,7 @@ services:
     env: node
     plan: free
     buildCommand: npm run install:all && PUPPETEER_CACHE_DIR=/opt/render/.cache/puppeteer npm exec --prefix server -- puppeteer browsers install chrome && npm run build --prefix client
-    startCommand: node server.js
+    startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
