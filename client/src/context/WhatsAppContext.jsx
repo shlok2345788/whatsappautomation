@@ -33,10 +33,16 @@ export const WhatsAppProvider = ({ children }) => {
   }, [fetchStatus]);
 
   useEffect(() => {
-    if (!user || (status !== 'CONNECTING' && status !== 'WAITING_QR')) return undefined;
+    if (!user || status === 'CONNECTED') return undefined;
 
     const intervalId = window.setInterval(fetchStatus, 2000);
-    return () => window.clearInterval(intervalId);
+    const handleFocus = () => fetchStatus();
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, [fetchStatus, status, user]);
 
   useEffect(() => {
@@ -45,8 +51,11 @@ export const WhatsAppProvider = ({ children }) => {
     const handleStatus = (data) => {
       if (data && data.status) {
         setStatus(data.status);
+        if (data.status !== 'WAITING_QR') {
+          setQrCode(null);
+        }
       }
-      if (data?.error) setError(data.error);
+      setError(data?.error || '');
     };
 
     const handleQr = (data) => {
