@@ -10,7 +10,7 @@ if (!fs.existsSync(uploadsDir)) {
 // Storage for Excel uploads
 const excelStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const userDir = path.join(uploadsDir, 'excel', `user_${req.user ? req.user._id : 'temp'}`);
+    const userDir = path.join(uploadsDir, 'excel', `user_${req.user ? req.user.id : 'temp'}`);
     if (!fs.existsSync(userDir)) {
       fs.mkdirSync(userDir, { recursive: true });
     }
@@ -42,7 +42,7 @@ const uploadExcel = multer({
 // Storage for PDF uploads
 const pdfStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const userDir = path.join(uploadsDir, 'pdfs', `user_${req.user ? req.user._id : 'temp'}`);
+    const userDir = path.join(uploadsDir, 'pdfs', `user_${req.user ? req.user.id : 'temp'}`);
     if (!fs.existsSync(userDir)) {
       fs.mkdirSync(userDir, { recursive: true });
     }

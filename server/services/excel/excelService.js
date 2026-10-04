@@ -1,4 +1,5 @@
 const xlsx = require('xlsx');
+const fs = require('fs');
 
 const normalizePhoneNumber = (rawNumber) => {
   if (rawNumber === null || rawNumber === undefined || rawNumber === '') {
@@ -37,8 +38,15 @@ const normalizePhoneNumber = (rawNumber) => {
 };
 
 const parseExcelFile = (filePath) => {
-  const workbook = xlsx.readFile(filePath);
+  if (!filePath || !fs.existsSync(filePath)) {
+    throw new Error('Uploaded Excel file could not be found');
+  }
+
+  const workbook = xlsx.readFile(filePath, { cellDates: false });
   const sheetName = workbook.SheetNames[0];
+  if (!sheetName || !workbook.Sheets[sheetName]) {
+    throw new Error('Excel file does not contain a readable worksheet');
+  }
   const worksheet = workbook.Sheets[sheetName];
   
   // Convert sheet to json array of arrays to find header row

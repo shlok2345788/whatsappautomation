@@ -188,18 +188,24 @@ class SqliteQueryBuilder {
     if (this.operation === 'insert') {
       const inserted = [];
       const now = new Date().toISOString();
+      const tableColumns = new Set(
+        db.prepare(`PRAGMA table_info(${this.tableName})`).all().map((column) => column.name)
+      );
       for (const item of this.insertData) {
         const itemToInsert = { ...item };
-        if (!itemToInsert.createdAt && !itemToInsert.created_at) {
+        if (tableColumns.has('createdAt') && !itemToInsert.createdAt && !itemToInsert.created_at) {
           itemToInsert.createdAt = now;
         }
-        if (!itemToInsert.updatedAt) {
+        if (tableColumns.has('updatedAt') && !itemToInsert.updatedAt) {
           itemToInsert.updatedAt = now;
         }
 
-        const keys = Object.keys(itemToInsert);
+        const keys = Object.keys(itemToInsert).filter((key) => tableColumns.has(key));
+        if (keys.length === 0) {
+          throw new Error(`No insertable columns found for table ${this.tableName}`);
+        }
         const placeholders = keys.map(() => '?').join(',');
-        const values = Object.values(itemToInsert);
+        const values = keys.map((key) => itemToInsert[key]);
 
         const sql = `INSERT INTO ${this.tableName} (${keys.join(',')}) VALUES (${placeholders})`;
         const info = db.prepare(sql).run(...values);

@@ -3,23 +3,26 @@ const excelService = require('../services/excel/excelService');
 const fs = require('fs');
 
 const uploadAndParseExcel = async (req, res, next) => {
+  let filePath;
   try {
     if (!req.file) {
       return res.status(400).json({ message: 'Please upload an Excel file (.xlsx or .xls)' });
     }
 
-    const filePath = req.file.path;
+    filePath = req.file.path;
     const parsedData = excelService.parseExcelFile(filePath);
-
-    try {
-      fs.unlinkSync(filePath);
-    } catch (e) {
-      // ignore cleanup error
-    }
 
     res.json(parsedData);
   } catch (error) {
     next(error);
+  } finally {
+    if (filePath) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (cleanupError) {
+        console.error('Failed to clean up uploaded Excel file:', cleanupError.message);
+      }
+    }
   }
 };
 
