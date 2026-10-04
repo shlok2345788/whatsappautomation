@@ -70,14 +70,16 @@ export const WhatsAppProvider = ({ children }) => {
     socket.on('whatsapp:qr', handleQr);
     socket.on('whatsapp:connected', handleConnected);
     socket.on('whatsapp:disconnected', handleDisconnected);
+    socket.on('connect', fetchStatus);
 
     return () => {
       socket.off('whatsapp:status', handleStatus);
       socket.off('whatsapp:qr', handleQr);
       socket.off('whatsapp:connected', handleConnected);
       socket.off('whatsapp:disconnected', handleDisconnected);
+      socket.off('connect', fetchStatus);
     };
-  }, [socket]);
+  }, [fetchStatus, socket]);
 
   const connect = async () => {
     setLoading(true);
