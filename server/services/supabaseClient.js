@@ -4,6 +4,7 @@ require('dotenv').config();
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+const isProduction = process.env.NODE_ENV === 'production';
 
 class SqliteQueryBuilder {
   constructor(tableName) {
@@ -291,6 +292,11 @@ if (supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith('http')) {
 }
 
 if (!supabase) {
+  if (isProduction) {
+    throw new Error(
+      'Persistent storage is not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY in the server environment.'
+    );
+  }
   console.log('[Database] Using local SQLite app.db database adapter');
   supabase = {
     from: (table) => new SqliteQueryBuilder(table),
@@ -304,4 +310,6 @@ if (!supabase) {
   };
 }
 
-module.exports = { supabase };
+const storageProvider = supabaseUrl && supabaseAnonKey ? 'supabase' : 'sqlite';
+
+module.exports = { supabase, storageProvider };

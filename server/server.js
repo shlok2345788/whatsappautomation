@@ -19,6 +19,7 @@ const matchingRoutes = require('./routes/matchingRoutes');
 const queueRoutes = require('./routes/queueRoutes');
 const historyRoutes = require('./routes/historyRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
+const { storageProvider } = require('./services/supabaseClient');
 
 // Initialize DB Connection
 connectDB();
@@ -67,7 +68,7 @@ app.use('/api/settings', settingsRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date() });
+  res.json({ status: 'ok', storageProvider, timestamp: new Date() });
 });
 
 // Serve frontend in production
