@@ -11,6 +11,7 @@ const pageTitles = {
   '/dashboard/matching': 'Document Matching',
   '/dashboard/queue': 'Send Queue',
   '/dashboard/history': 'Message History',
+  '/dashboard/tally': 'Tally Prime Integration',
   '/dashboard/settings': 'Settings'
 };
 

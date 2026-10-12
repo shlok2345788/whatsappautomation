@@ -10,7 +10,8 @@ import {
   History as HistoryIcon,
   Settings as SettingsIcon,
   LogOut,
-  MessageSquare
+  MessageSquare,
+  Database
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useWhatsApp } from '../context/WhatsAppContext';
@@ -29,6 +30,7 @@ const Sidebar = () => {
   const navItems = [
     { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { label: 'WhatsApp', path: '/dashboard/whatsapp', icon: QrCode },
+    { label: 'Tally Prime', path: '/dashboard/tally', icon: Database },
     { label: 'Excel Contacts', path: '/dashboard/contacts', icon: FileSpreadsheet },
     { label: 'PDF Files', path: '/dashboard/pdfs', icon: FileText },
     { label: 'Matching', path: '/dashboard/matching', icon: GitCompare },

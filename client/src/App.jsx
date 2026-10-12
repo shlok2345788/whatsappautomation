@@ -16,6 +16,7 @@ import Matching from './pages/Matching';
 import SendQueue from './pages/SendQueue';
 import History from './pages/History';
 import Settings from './pages/Settings';
+import TallyIntegration from './pages/TallyIntegration';
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -95,6 +96,7 @@ function AppRoutes() {
         <Route path="matching" element={<Matching />} />
         <Route path="queue" element={<SendQueue />} />
         <Route path="history" element={<History />} />
+        <Route path="tally" element={<TallyIntegration />} />
         <Route path="settings" element={<Settings />} />
       </Route>
 
