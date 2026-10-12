@@ -1,49 +1,40 @@
+const fs = require('fs');
+const path = require('path');
 const { supabase } = require('../services/supabaseClient');
 const pdfService = require('../services/pdf/pdfService');
 
-const scanFolder = async (req, res, next) => {
+const downloadPdfFile = async (req, res, next) => {
   try {
-    const { folderPath, clearPrevious } = req.body;
+    const { id } = req.params;
     const companyId = req.companyId;
 
-    if (!folderPath || typeof folderPath !== 'string') {
-      return res.status(400).json({ message: 'Please specify a valid local folder path' });
-    }
-
-    const pdfsFound = pdfService.scanLocalFolder(folderPath.trim());
-    const createdAt = new Date().toISOString();
-
-    if (clearPrevious) {
-      await supabase.from('pdf_files').delete().eq('company_id', companyId);
-    }
-
-    const rows = pdfsFound.map((item) => ({
-      company_id: companyId,
-      originalFilename: item.originalFilename,
-      extractedName: item.extractedName,
-      filePath: item.filePath,
-      fileSize: item.fileSize,
-      fileHash: item.fileHash,
-      matchedContactId: null,
-      createdAt,
-    }));
-
-    if (rows.length > 0) {
-      const { error } = await supabase.from('pdf_files').insert(rows);
-      if (error) throw error;
-    }
-
-    const { data: inserted } = await supabase
+    const { data: pdf, error } = await supabase
       .from('pdf_files')
       .select('*')
+      .eq('id', id)
       .eq('company_id', companyId)
-      .order('originalFilename', { ascending: true });
+      .single();
 
-    res.status(201).json({
-      message: `Scanned and found ${(inserted || []).length} PDF files`,
-      count: (inserted || []).length,
-      pdfs: inserted || []
-    });
+    if (error || !pdf) {
+      return res.status(404).json({ message: 'PDF document not found or access denied' });
+    }
+
+    const resolvedPath = path.resolve(pdf.filePath);
+    const uploadsDir = path.resolve(process.env.UPLOADS_DIR || path.join(__dirname, '../../uploads'));
+
+    // Prevent directory traversal attacks
+    if (!resolvedPath.startsWith(uploadsDir)) {
+      return res.status(403).json({ message: 'Access denied: Invalid file location' });
+    }
+
+    if (!fs.existsSync(resolvedPath)) {
+      return res.status(404).json({ message: 'File not found on storage disk' });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(pdf.originalFilename)}"`);
+    const stream = fs.createReadStream(resolvedPath);
+    stream.pipe(res);
   } catch (error) {
     next(error);
   }
@@ -149,7 +140,7 @@ const deletePdfFiles = async (req, res, next) => {
 };
 
 module.exports = {
-  scanFolder,
+  downloadPdfFile,
   uploadFiles,
   getPdfFiles,
   deletePdfFiles

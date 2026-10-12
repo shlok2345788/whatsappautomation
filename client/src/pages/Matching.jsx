@@ -164,20 +164,35 @@ const Matching = () => {
                     <td style={{ fontWeight: 600 }}>{item.pdfFilename}</td>
                     <td style={{ color: 'var(--text-muted)' }}>{item.extractedName}</td>
                     <td>
-                      <select
-                        className="form-select"
-                        defaultValue=""
-                        disabled={updatingManual[item.pdfId]}
-                        onChange={(e) => handleManualSelect(item.pdfId, e.target.value)}
-                        style={{ maxWidth: '280px' }}
-                      >
-                        <option value="">-- Select Contact to Match --</option>
-                        {matchData.contacts.map((c) => (
-                          <option key={c.id || c._id} value={c.id || c._id}>
-                            {c.name} ({c.mobile})
-                          </option>
-                        ))}
-                      </select>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        {item.suggestedContact && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ borderColor: 'var(--primary)', color: 'var(--primary)', fontSize: '12px', padding: '4px 8px' }}
+                            disabled={updatingManual[item.pdfId]}
+                            onClick={() => handleManualSelect(item.pdfId, item.suggestedContact.id)}
+                            title={`Suggested match based on name similarity: ${item.suggestedContact.name}`}
+                          >
+                            <CheckCircle2 size={13} style={{ marginRight: '4px' }} />
+                            Confirm "{item.suggestedContact.name}"
+                          </button>
+                        )}
+                        <select
+                          className="form-select"
+                          defaultValue=""
+                          disabled={updatingManual[item.pdfId]}
+                          onChange={(e) => handleManualSelect(item.pdfId, e.target.value)}
+                          style={{ maxWidth: '240px' }}
+                        >
+                          <option value="">-- Select Contact --</option>
+                          {matchData.contacts.map((c) => (
+                            <option key={c.id || c._id} value={c.id || c._id}>
+                              {c.name} ({c.mobile})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </td>
                   </tr>
                 ))}

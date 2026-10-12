@@ -88,9 +88,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Static uploads directory for serving uploaded media if needed
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
-
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/whatsapp', whatsappRoutes);

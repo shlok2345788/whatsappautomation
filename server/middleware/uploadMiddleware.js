@@ -10,11 +10,12 @@ if (!fs.existsSync(uploadsDir)) {
 // Storage for Excel uploads
 const excelStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const userDir = path.join(uploadsDir, 'excel', `user_${req.user ? req.user.id : 'temp'}`);
-    if (!fs.existsSync(userDir)) {
-      fs.mkdirSync(userDir, { recursive: true });
+    const companyId = req.companyId || (req.user && (req.user.company_id || req.user.id)) || 'default';
+    const tenantDir = path.join(uploadsDir, 'excel', `tenant_${String(companyId).replace(/[^a-zA-Z0-9_-]/g, '_')}`);
+    if (!fs.existsSync(tenantDir)) {
+      fs.mkdirSync(tenantDir, { recursive: true });
     }
-    cb(null, userDir);
+    cb(null, tenantDir);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -42,11 +43,12 @@ const uploadExcel = multer({
 // Storage for PDF uploads
 const pdfStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const userDir = path.join(uploadsDir, 'pdfs', `user_${req.user ? req.user.id : 'temp'}`);
-    if (!fs.existsSync(userDir)) {
-      fs.mkdirSync(userDir, { recursive: true });
+    const companyId = req.companyId || (req.user && (req.user.company_id || req.user.id)) || 'default';
+    const tenantDir = path.join(uploadsDir, 'pdfs', `tenant_${String(companyId).replace(/[^a-zA-Z0-9_-]/g, '_')}`);
+    if (!fs.existsSync(tenantDir)) {
+      fs.mkdirSync(tenantDir, { recursive: true });
     }
-    cb(null, userDir);
+    cb(null, tenantDir);
   },
   filename: (req, file, cb) => {
     // Keep clean filename for matching, but avoid collision

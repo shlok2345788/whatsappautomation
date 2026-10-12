@@ -73,15 +73,16 @@ const previewMatches = async (req, res, next) => {
           }
         }
 
-        // Strategy 3: Fuzzy substring match
+        // Strategy 3: Safe fuzzy suggestion ONLY — do not auto-match to prevent DPDP data leakage
+        let suggestedContact = null;
         if (!matchedContact) {
           for (const [cNormName, contact] of contactMap.entries()) {
-            if (!cNormName) continue;
+            if (!cNormName || cNormName.length < 3) continue;
             if (
               (pdfNormName && (cNormName.includes(pdfNormName) || pdfNormName.includes(cNormName))) ||
               (pdfCleanFilename && (cNormName.includes(pdfCleanFilename) || pdfCleanFilename.includes(cNormName)))
             ) {
-              matchedContact = contact;
+              suggestedContact = contact;
               break;
             }
           }
@@ -113,7 +114,8 @@ const previewMatches = async (req, res, next) => {
           pdfFilename: pdf.originalFilename,
           extractedName: pdf.extractedName,
           filePath: pdf.filePath,
-          fileHash: pdf.fileHash
+          fileHash: pdf.fileHash,
+          suggestedContact: suggestedContact ? { id: suggestedContact.id, name: suggestedContact.name, mobile: suggestedContact.mobile } : null
         });
       }
     }
