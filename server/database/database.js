@@ -16,7 +16,107 @@ db.pragma('journal_mode = WAL');
 
 // Initialize database schema tables with company_id architecture
 const initDatabase = () => {
-  // Drop and recreate tables with TEXT company_id to support Firebase UID strings
+  // Ensure foreign keys don't block schema adjustments
+  db.pragma('foreign_keys = OFF');
+
+  const checkTableNeedsMigration = (tableName) => {
+    try {
+      const row = db.prepare('SELECT sql FROM sqlite_master WHERE name = ?').get(tableName);
+      return row && row.sql && row.sql.includes('REFERENCES companies');
+    } catch (e) {
+      return false;
+    }
+  };
+
+  if (checkTableNeedsMigration('pdf_files')) {
+    console.log('[SQLite Migration] Migrating pdf_files to remove obsolete companies foreign key...');
+    db.exec(`
+      CREATE TABLE pdf_files_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        company_id TEXT NOT NULL,
+        originalFilename TEXT NOT NULL,
+        extractedName TEXT NOT NULL,
+        filePath TEXT NOT NULL,
+        fileSize INTEGER DEFAULT 0,
+        fileHash TEXT DEFAULT '',
+        matchedContactId INTEGER DEFAULT NULL,
+        createdAt TEXT NOT NULL
+      );
+      INSERT INTO pdf_files_new SELECT id, CAST(company_id AS TEXT), originalFilename, extractedName, filePath, fileSize, fileHash, matchedContactId, createdAt FROM pdf_files;
+      DROP TABLE pdf_files;
+      ALTER TABLE pdf_files_new RENAME TO pdf_files;
+      CREATE INDEX IF NOT EXISTS idx_pdfs_company_filename ON pdf_files(company_id, originalFilename);
+    `);
+  }
+
+  if (checkTableNeedsMigration('contacts')) {
+    console.log('[SQLite Migration] Migrating contacts to remove obsolete companies foreign key...');
+    db.exec(`
+      CREATE TABLE contacts_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        company_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        mobile TEXT NOT NULL,
+        originalMobile TEXT,
+        isValid INTEGER NOT NULL DEFAULT 1,
+        statusMessage TEXT DEFAULT 'Valid',
+        createdAt TEXT NOT NULL
+      );
+      INSERT INTO contacts_new SELECT id, CAST(company_id AS TEXT), name, mobile, originalMobile, isValid, statusMessage, createdAt FROM contacts;
+      DROP TABLE contacts;
+      ALTER TABLE contacts_new RENAME TO contacts;
+      CREATE INDEX IF NOT EXISTS idx_contacts_company_mobile ON contacts(company_id, mobile);
+      CREATE INDEX IF NOT EXISTS idx_contacts_company_name ON contacts(company_id, name);
+    `);
+  }
+
+  if (checkTableNeedsMigration('message_logs')) {
+    console.log('[SQLite Migration] Migrating message_logs to remove obsolete companies foreign key...');
+    db.exec(`
+      CREATE TABLE message_logs_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        company_id TEXT NOT NULL,
+        contactId INTEGER DEFAULT NULL,
+        contactName TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        pdfFilename TEXT NOT NULL,
+        pdfPath TEXT NOT NULL,
+        fileHash TEXT DEFAULT '',
+        messageText TEXT DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'Pending',
+        errorReason TEXT DEFAULT '',
+        sentAt TEXT DEFAULT NULL,
+        createdAt TEXT NOT NULL
+      );
+      INSERT INTO message_logs_new SELECT id, CAST(company_id AS TEXT), contactId, contactName, phone, pdfFilename, pdfPath, fileHash, messageText, status, errorReason, sentAt, createdAt FROM message_logs;
+      DROP TABLE message_logs;
+      ALTER TABLE message_logs_new RENAME TO message_logs;
+      CREATE INDEX IF NOT EXISTS idx_logs_company_status ON message_logs(company_id, status);
+      CREATE INDEX IF NOT EXISTS idx_logs_company_hash_phone ON message_logs(company_id, fileHash, phone);
+      CREATE INDEX IF NOT EXISTS idx_logs_company_pdf_phone ON message_logs(company_id, pdfFilename, phone);
+    `);
+  }
+
+  if (checkTableNeedsMigration('settings')) {
+    console.log('[SQLite Migration] Migrating settings to remove obsolete companies foreign key...');
+    db.exec(`
+      CREATE TABLE settings_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        company_id TEXT NOT NULL UNIQUE,
+        delayBetweenMessages INTEGER DEFAULT 4,
+        messageTemplate TEXT DEFAULT 'Hello {{name}},\n\nPlease find your document attached.\n\nThank you.',
+        autoRetryFailed INTEGER DEFAULT 0,
+        updatedAt TEXT NOT NULL
+      );
+      INSERT INTO settings_new SELECT id, CAST(company_id AS TEXT), delayBetweenMessages, messageTemplate, autoRetryFailed, updatedAt FROM settings;
+      DROP TABLE settings;
+      ALTER TABLE settings_new RENAME TO settings;
+    `);
+  }
+
+  db.pragma('foreign_keys = ON');
+
+  // Create tables if starting fresh
   db.exec(`
     CREATE TABLE IF NOT EXISTS contacts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,8 +141,7 @@ const initDatabase = () => {
       fileSize INTEGER DEFAULT 0,
       fileHash TEXT DEFAULT '',
       matchedContactId INTEGER DEFAULT NULL,
-      createdAt TEXT NOT NULL,
-      FOREIGN KEY (matchedContactId) REFERENCES contacts(id) ON DELETE SET NULL
+      createdAt TEXT NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_pdfs_company_filename ON pdf_files(company_id, originalFilename);

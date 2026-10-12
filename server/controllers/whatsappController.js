@@ -31,8 +31,9 @@ const getQrCode = async (req, res, next) => {
 const connectWhatsApp = async (req, res, next) => {
   try {
     const companyId = req.companyId || req.user.id;
+    const { cleanSession } = req.body || {};
     const io = req.app.get('io');
-    const initialization = whatsappService.initUserClient(companyId, io);
+    const initialization = whatsappService.initUserClient(companyId, io, cleanSession);
     initialization.catch((error) => {
       console.error(`[WhatsApp company_${companyId}] Background initialization failed:`, error.message);
     });

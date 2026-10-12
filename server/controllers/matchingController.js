@@ -25,8 +25,18 @@ const previewMatches = async (req, res, next) => {
     });
 
     const contactMap = new Map();
+    const phoneMap = new Map();
     (contacts || []).forEach((contact) => {
-      contactMap.set(normalizeString(contact.name), contact);
+      if (contact.name) {
+        contactMap.set(normalizeString(contact.name), contact);
+      }
+      if (contact.mobile) {
+        const cleanPhone = String(contact.mobile).replace(/\D/g, '');
+        phoneMap.set(cleanPhone, contact);
+        if (cleanPhone.length > 10) {
+          phoneMap.set(cleanPhone.slice(-10), contact); // Match last 10 digits
+        }
+      }
     });
 
     const matched = [];
@@ -44,11 +54,33 @@ const previewMatches = async (req, res, next) => {
 
       if (!matchedContact) {
         const pdfNormName = normalizeString(pdf.extractedName);
-        matchedContact = contactMap.get(pdfNormName);
+        const pdfCleanFilename = normalizeString((pdf.originalFilename || '').replace(/\.pdf$/i, ''));
 
+        // Strategy 1: Exact match on extracted name or filename
+        matchedContact = (pdfNormName ? contactMap.get(pdfNormName) : null) ||
+                         (pdfCleanFilename ? contactMap.get(pdfCleanFilename) : null);
+
+        // Strategy 2: Phone number match if filename contains phone digits
+        if (!matchedContact) {
+          const digitsInFilename = (pdf.originalFilename || '').replace(/\D/g, '');
+          if (digitsInFilename.length >= 10) {
+            for (const [phoneKey, contact] of phoneMap.entries()) {
+              if (phoneKey.length >= 10 && digitsInFilename.includes(phoneKey)) {
+                matchedContact = contact;
+                break;
+              }
+            }
+          }
+        }
+
+        // Strategy 3: Fuzzy substring match
         if (!matchedContact) {
           for (const [cNormName, contact] of contactMap.entries()) {
-            if (cNormName.includes(pdfNormName) || pdfNormName.includes(cNormName)) {
+            if (!cNormName) continue;
+            if (
+              (pdfNormName && (cNormName.includes(pdfNormName) || pdfNormName.includes(cNormName))) ||
+              (pdfCleanFilename && (cNormName.includes(pdfCleanFilename) || pdfCleanFilename.includes(cNormName)))
+            ) {
               matchedContact = contact;
               break;
             }

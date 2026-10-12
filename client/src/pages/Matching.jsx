@@ -173,7 +173,7 @@ const Matching = () => {
                       >
                         <option value="">-- Select Contact to Match --</option>
                         {matchData.contacts.map((c) => (
-                          <option key={c._id} value={c._id}>
+                          <option key={c.id || c._id} value={c.id || c._id}>
                             {c.name} ({c.mobile})
                           </option>
                         ))}

@@ -90,11 +90,11 @@ export const WhatsAppProvider = ({ children }) => {
     };
   }, [fetchStatus, socket]);
 
-  const connect = async () => {
+  const connect = async (cleanSession = false) => {
     setLoading(true);
     setError('');
     try {
-      const res = await API.post('/whatsapp/connect');
+      const res = await API.post('/whatsapp/connect', { cleanSession });
       setStatus(res.data.status || 'CONNECTING');
       if (res.data.qrCode) {
         setQrCode(res.data.qrCode);

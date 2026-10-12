@@ -51,15 +51,27 @@ const WhatsAppConnect = () => {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {status !== 'CONNECTED' ? (
-              <button
-                onClick={connect}
-                disabled={loading}
-                className="btn btn-primary btn-lg"
-                style={{ width: '100%' }}
-              >
-                <QrCode size={18} />
-                {loading ? 'Initializing WhatsApp...' : 'Initialize & Scan QR'}
-              </button>
+              <>
+                <button
+                  onClick={() => connect(false)}
+                  disabled={loading}
+                  className="btn btn-primary btn-lg"
+                  style={{ width: '100%' }}
+                >
+                  <QrCode size={18} />
+                  {loading ? 'Initializing WhatsApp...' : 'Initialize & Scan QR'}
+                </button>
+                <button
+                  onClick={() => connect(true)}
+                  disabled={loading}
+                  className="btn btn-secondary"
+                  style={{ width: '100%', fontSize: '13px' }}
+                  title="Clear any old session cache and generate a fresh QR code"
+                >
+                  <RefreshCw size={15} />
+                  Reset Session & Fresh Scan
+                </button>
+              </>
             ) : (
               <button
                 onClick={() => disconnect(true)}
@@ -84,6 +96,14 @@ const WhatsAppConnect = () => {
               <h3 style={{ fontSize: '18px', color: '#15803d', marginBottom: '8px' }}>WhatsApp Connected</h3>
               <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
                 Your device is connected and ready to process PDF sending queues.
+              </p>
+            </div>
+          ) : status === 'CONNECTING' ? (
+            <div style={{ padding: '32px', textAlign: 'center' }}>
+              <div style={{ width: '48px', height: '48px', borderRadius: '50%', border: '4px solid #e2e8f0', borderTopColor: '#2563eb', margin: '0 auto 16px', animation: 'spin 1s linear infinite' }} />
+              <h4 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>Pairing & Synchronizing...</h4>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', maxWidth: '280px', margin: '0 auto' }}>
+                QR code recognized! Synchronizing session with WhatsApp. This takes a few moments.
               </p>
             </div>
           ) : qrCode ? (

@@ -92,16 +92,55 @@ const ensureChromeInstalled = () => {
   return executablePath;
 };
 
-const initCompanyClient = async (companyId, io) => {
-  if (clientsMap[companyId] && clientsMap[companyId].client) {
-    const status = clientsMap[companyId].status;
-    if (status === 'CONNECTED' || status === 'CONNECTING' || status === 'WAITING_QR') {
+const cleanStaleChromeLocks = (sessionDir) => {
+  if (!fs.existsSync(sessionDir)) return;
+  const lockFiles = ['SingletonLock', 'SingletonSocket', 'SingletonCookie', 'DevToolsActivePort'];
+  for (const lockFile of lockFiles) {
+    const lockPath = path.join(sessionDir, lockFile);
+    try {
+      const stat = fs.lstatSync(lockPath);
+      if (stat.isFile() || stat.isSymbolicLink()) {
+        fs.unlinkSync(lockPath);
+        console.log(`[WhatsApp] Cleared stale Chrome lock: ${lockFile}`);
+      }
+    } catch (e) {
+      // ignore if file doesn't exist
+    }
+  }
+};
+
+const initCompanyClient = async (companyId, io, cleanSession = false) => {
+  const sessionsDir = getSessionsDir();
+  const clientId = `company_${companyId}`;
+  const companySessionDir = path.join(sessionsDir, `session-${clientId}`);
+
+  if (clientsMap[companyId]?.client) {
+    const currentStatus = clientsMap[companyId].status;
+    if (!cleanSession && (currentStatus === 'CONNECTED' || currentStatus === 'CONNECTING' || currentStatus === 'WAITING_QR')) {
       return clientsMap[companyId];
+    }
+    try {
+      console.log(`[WhatsApp company_${companyId}] Stopping previous browser client...`);
+      await clientsMap[companyId].client.destroy();
+    } catch (e) {}
+    clientsMap[companyId].client = null;
+  }
+
+  if (cleanSession) {
+    console.log(`[WhatsApp company_${companyId}] Clean session requested. Removing old session cache...`);
+    delete clientsMap[companyId];
+    if (fs.existsSync(companySessionDir)) {
+      try {
+        fs.rmSync(companySessionDir, { recursive: true, force: true });
+        console.log(`[WhatsApp company_${companyId}] Removed old session folder at ${companySessionDir}`);
+      } catch (e) {
+        console.error(`Error deleting session directory: ${e.message}`);
+      }
     }
   }
 
-  const sessionsDir = getSessionsDir();
-  const clientId = `company_${companyId}`;
+  // Clear any dangling lock files created by crashed Chromium processes (Render / Linux / Windows)
+  cleanStaleChromeLocks(companySessionDir);
 
   clientsMap[companyId] = {
     client: null,
@@ -120,11 +159,19 @@ const initCompanyClient = async (companyId, io) => {
 
   try {
     const chromeExecutablePath = ensureChromeInstalled();
+    console.log(`[WhatsApp company_${companyId}] Launching Chromium instance...`);
+    console.log(`[WhatsApp company_${companyId}] Chrome executable: ${chromeExecutablePath}`);
     const client = new Client({
       authStrategy: new LocalAuth({
         dataPath: sessionsDir,
         clientId: clientId
       }),
+      webVersionCache: {
+        type: 'none'
+      },
+      bypassCSP: true,
+      takeoverOnConflict: true,
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
       puppeteer: {
         headless: true,
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || chromeExecutablePath,
@@ -134,17 +181,29 @@ const initCompanyClient = async (companyId, io) => {
           '--disable-dev-shm-usage',
           '--disable-accelerated-2d-canvas',
           '--no-first-run',
-          '--no-zygote',
-          '--single-process',
-          '--disable-gpu'
+          '--disable-gpu',
+          '--disable-features=IsolateOrigins,site-per-process'
         ]
       }
     });
 
     clientsMap[companyId].client = client;
 
+    let readyCheckInterval = null;
+
     client.on('qr', async (qr) => {
-      console.log(`[WhatsApp company_${companyId}] Fresh QR received`);
+      console.log(`\n======================================================`);
+      console.log(`[WhatsApp company_${companyId}] Fresh QR Code Generated!`);
+      console.log(`Scan this QR code with WhatsApp (Linked Devices):`);
+      console.log(`======================================================`);
+      try {
+        const qrTerminal = await qrcode.toString(qr, { type: 'terminal', small: true });
+        console.log(qrTerminal);
+      } catch (e) {
+        // terminal qr format fallback
+      }
+      console.log(`[WhatsApp company_${companyId}] Waiting for scan...\n`);
+
       try {
         const qrDataUrl = await qrcode.toDataURL(qr);
         clientsMap[companyId].status = 'WAITING_QR';
@@ -157,30 +216,89 @@ const initCompanyClient = async (companyId, io) => {
           io.to(roomName).emit('whatsapp:status', { status: 'WAITING_QR' });
         }
       } catch (err) {
-        console.error(`Error generating QR data URL: ${err.message}`);
+        console.error(`[WhatsApp company_${companyId}] Error generating QR data URL: ${err.message}`);
       }
     });
 
-    client.on('authenticated', async () => {
-      console.log(`[WhatsApp company_${companyId}] Authenticated`);
+    client.on('loading_screen', (percent, message) => {
+      console.log(`[WhatsApp company_${companyId}] Sync Progress: ${percent}% - "${message || 'Syncing chats'}"`);
+      if (io) {
+        io.to(roomName).emit('whatsapp:loading', { percent, message });
+        io.to(roomName).emit('whatsapp:status', { status: 'CONNECTING', percent });
+      }
+    });
+
+    client.on('change_state', (state) => {
+      console.log(`[WhatsApp company_${companyId}] State Changed -> ${state}`);
+      if (state === 'CONNECTED') {
+        clientsMap[companyId].status = 'CONNECTED';
+        clientsMap[companyId].qrCode = null;
+        clientsMap[companyId].error = null;
+        if (readyCheckInterval) clearInterval(readyCheckInterval);
+        if (io) {
+          io.to(roomName).emit('whatsapp:connected', { status: 'CONNECTED' });
+          io.to(roomName).emit('whatsapp:status', { status: 'CONNECTED' });
+        }
+      }
+    });
+
+    client.on('authenticated', () => {
+      console.log(`\n======================================================`);
+      console.log(`[WhatsApp company_${companyId}] >>> AUTHENTICATED! Phone successfully scanned QR <<<`);
+      console.log(`[WhatsApp company_${companyId}] Syncing WhatsApp Web session and chats...`);
+      console.log(`======================================================\n`);
       clientsMap[companyId].status = 'CONNECTING';
       clientsMap[companyId].qrCode = null;
       clientsMap[companyId].error = null;
       if (io) {
         io.to(roomName).emit('whatsapp:status', { status: 'CONNECTING' });
       }
-      
-      // Upload session to Supabase so it's persisted across restarts
-      try {
-        const companySessionDir = path.join(sessionsDir, `session-${clientId}`);
-        await SupabaseSessionManager.uploadSession(companyId, companySessionDir);
-      } catch (err) {
-        console.error(`[WhatsApp company_${companyId}] Failed to upload session:`, err.message);
-      }
+
+      // Watchdog: Give WhatsApp 10 seconds to finish post-auth page navigation before checking state
+      if (readyCheckInterval) clearInterval(readyCheckInterval);
+      setTimeout(() => {
+        if (clientsMap[companyId]?.status === 'CONNECTED') return;
+
+        readyCheckInterval = setInterval(async () => {
+          try {
+            if (clientsMap[companyId]?.status === 'CONNECTED') {
+              clearInterval(readyCheckInterval);
+              return;
+            }
+            if (client && client.pupPage && !client.pupPage.isClosed()) {
+              const state = await client.getState().catch((err) => {
+                // Ignore transient context destruction while page is navigating
+                return null;
+              });
+
+              if (state) {
+                console.log(`[WhatsApp company_${companyId}] Watchdog State: ${state}`);
+                if (state === 'CONNECTED') {
+                  console.log(`[WhatsApp company_${companyId}] >>> WATCHDOG: CONNECTED STATE CONFIRMED! <<<`);
+                  clearInterval(readyCheckInterval);
+                  clientsMap[companyId].status = 'CONNECTED';
+                  clientsMap[companyId].qrCode = null;
+                  clientsMap[companyId].error = null;
+                  if (io) {
+                    io.to(roomName).emit('whatsapp:connected', { status: 'CONNECTED' });
+                    io.to(roomName).emit('whatsapp:status', { status: 'CONNECTED' });
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            // ignore transient evaluation errors
+          }
+        }, 4000);
+      }, 10000);
     });
 
     client.on('ready', () => {
-      console.log(`[WhatsApp company_${companyId}] Client is ready!`);
+      if (readyCheckInterval) clearInterval(readyCheckInterval);
+      console.log(`\n======================================================`);
+      console.log(`[WhatsApp company_${companyId}] >>> SUCCESS: WhatsApp Client is READY and CONNECTED! <<<`);
+      console.log(`[WhatsApp company_${companyId}] You can now send WhatsApp PDF messages.`);
+      console.log(`======================================================\n`);
       clientsMap[companyId].status = 'CONNECTED';
       clientsMap[companyId].qrCode = null;
       clientsMap[companyId].error = null;
@@ -188,10 +306,21 @@ const initCompanyClient = async (companyId, io) => {
         io.to(roomName).emit('whatsapp:connected', { status: 'CONNECTED' });
         io.to(roomName).emit('whatsapp:status', { status: 'CONNECTED' });
       }
+
+      // Persist session to Supabase in the background after browser settles
+      setTimeout(async () => {
+        try {
+          const companySessionDir = path.join(sessionsDir, `session-${clientId}`);
+          await SupabaseSessionManager.uploadSession(companyId, companySessionDir);
+        } catch (err) {
+          console.warn(`[WhatsApp company_${companyId}] Background session upload skipped:`, err.message);
+        }
+      }, 5000);
     });
 
     client.on('auth_failure', (msg) => {
-      console.error(`[WhatsApp company_${companyId}] Auth Failure:`, msg);
+      if (readyCheckInterval) clearInterval(readyCheckInterval);
+      console.error(`\n[WhatsApp company_${companyId}] !!! AUTHENTICATION FAILURE:`, msg);
       clientsMap[companyId].status = 'DISCONNECTED';
       clientsMap[companyId].qrCode = null;
       clientsMap[companyId].error = msg;
@@ -202,7 +331,8 @@ const initCompanyClient = async (companyId, io) => {
     });
 
     client.on('disconnected', async (reason) => {
-      console.log(`[WhatsApp company_${companyId}] Client disconnected:`, reason);
+      if (readyCheckInterval) clearInterval(readyCheckInterval);
+      console.warn(`\n[WhatsApp company_${companyId}] !!! DISCONNECTED: ${reason}`);
       clientsMap[companyId].status = 'DISCONNECTED';
       clientsMap[companyId].qrCode = null;
       clientsMap[companyId].error = reason;
@@ -218,13 +348,15 @@ const initCompanyClient = async (companyId, io) => {
       clientsMap[companyId].client = null;
     });
 
-    // Try to download existing session before initialize
+    // Try to download existing session before initialize if not starting fresh
     const companySessionDir = path.join(sessionsDir, `session-${clientId}`);
-    if (!fs.existsSync(companySessionDir)) {
+    if (!cleanSession && !fs.existsSync(companySessionDir)) {
       await SupabaseSessionManager.downloadSession(companyId, companySessionDir);
     }
 
+    console.log(`[WhatsApp company_${companyId}] Starting client.initialize()...`);
     await client.initialize();
+    console.log(`[WhatsApp company_${companyId}] client.initialize() call completed.`);
     return clientsMap[companyId];
   } catch (error) {
     console.error(`[WhatsApp company_${companyId}] Initialize error:`, error.message);
@@ -312,6 +444,43 @@ const sendPdfDocument = async (companyId, phone, pdfPath, filename, caption = ''
     throw new Error('WhatsApp is not connected for this company. Please scan QR code first.');
   }
 
+  const client = instance.client;
+
+  // Restore pupPage reference if lost, closed, or detached
+  if (!client.pupPage || client.pupPage.isClosed()) {
+    if (client.pupBrowser && client.pupBrowser.isConnected()) {
+      try {
+        const pages = await client.pupBrowser.pages();
+        if (pages.length > 0) {
+          client.pupPage = pages[0];
+          console.log(`[WhatsApp company_${companyId}] Successfully recovered active browser page reference.`);
+        }
+      } catch (e) {
+        console.warn(`[WhatsApp company_${companyId}] Error checking browser pages: ${e.message}`);
+      }
+    }
+  }
+
+  if (!client.pupPage || client.pupPage.isClosed()) {
+    throw new Error('WhatsApp browser page is not active or closed. Please reconnect WhatsApp.');
+  }
+
+  // Ensure WhatsApp Web runtime injection is ready
+  try {
+    await client.pupPage.waitForFunction(
+      () => typeof window.WWebJS !== 'undefined',
+      { timeout: 8000 }
+    );
+  } catch (e) {
+    if (typeof client.inject === 'function') {
+      try {
+        await client.inject();
+      } catch (injectErr) {
+        // continue to attempt send
+      }
+    }
+  }
+
   if (!fs.existsSync(pdfPath)) {
     throw new Error(`PDF file not found at path: ${pdfPath}`);
   }
@@ -320,11 +489,19 @@ const sendPdfDocument = async (companyId, phone, pdfPath, filename, caption = ''
   if (formattedPhone.startsWith('+')) {
     formattedPhone = formattedPhone.substring(1);
   }
-  const chatId = formattedPhone.includes('@c.us') ? formattedPhone : `${formattedPhone}@c.us`;
+  let targetChatId = formattedPhone.includes('@c.us') ? formattedPhone : `${formattedPhone}@c.us`;
 
-  const isRegistered = await instance.client.isRegisteredUser(chatId);
-  if (!isRegistered) {
-    throw new Error('WhatsApp unavailable for this phone number');
+  // Resolve official WhatsApp WID
+  try {
+    if (typeof client.getNumberId === 'function') {
+      const numberId = await client.getNumberId(formattedPhone);
+      if (numberId && numberId._serialized) {
+        targetChatId = numberId._serialized;
+        console.log(`[WhatsApp company_${companyId}] Resolved official WID: ${targetChatId}`);
+      }
+    }
+  } catch (e) {
+    // fallback to targetChatId
   }
 
   const media = MessageMedia.fromFilePath(pdfPath);
@@ -332,7 +509,7 @@ const sendPdfDocument = async (companyId, phone, pdfPath, filename, caption = ''
     media.filename = filename;
   }
 
-  const result = await instance.client.sendMessage(chatId, media, {
+  const result = await client.sendMessage(targetChatId, media, {
     caption: caption || '',
     sendMediaAsDocument: true
   });

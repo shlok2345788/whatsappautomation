@@ -1,15 +1,22 @@
 const fs = require('fs');
 const path = require('path');
-const archiver = require('archiver');
-const extract = require('extract-zip');
-const { supabase } = require('../supabaseClient');
+const { supabase, storageProvider } = require('../supabaseClient');
 
 const BUCKET_NAME = 'whatsapp_sessions';
 
 class SupabaseSessionManager {
   static async uploadSession(companyId, sessionDir) {
-    if (!supabase) return;
+    if (storageProvider !== 'supabase' || !supabase || !supabase.storage) return;
     if (!fs.existsSync(sessionDir)) return;
+
+    let archiver;
+    try {
+      const archiverPkg = require('archiver');
+      archiver = typeof archiverPkg === 'function' ? archiverPkg : (archiverPkg.default || archiverPkg);
+    } catch (e) {
+      return;
+    }
+    if (typeof archiver !== 'function') return;
 
     const zipPath = `${sessionDir}.zip`;
     
@@ -51,7 +58,13 @@ class SupabaseSessionManager {
   }
 
   static async downloadSession(companyId, targetDir) {
-    if (!supabase) return false;
+    if (storageProvider !== 'supabase' || !supabase || !supabase.storage) return false;
+    let extract;
+    try {
+      extract = require('extract-zip');
+    } catch (e) {
+      return false;
+    }
     const remotePath = `${companyId}/session.zip`;
     const zipPath = `${targetDir}.zip`;
 

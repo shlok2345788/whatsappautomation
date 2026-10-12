@@ -2,9 +2,15 @@ const { createClient } = require('@supabase/supabase-js');
 const { db, formatRow } = require('../database/database');
 require('dotenv').config();
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 const isProduction = process.env.NODE_ENV === 'production';
+
+const sanitizeValue = (v) => {
+  if (typeof v === 'boolean') return v ? 1 : 0;
+  if (v === undefined) return null;
+  return v;
+};
 
 class SqliteQueryBuilder {
   constructor(tableName) {
@@ -19,6 +25,7 @@ class SqliteQueryBuilder {
     this.insertData = null;
     this.updateData = null;
     this.isSingle = false;
+    this.isMaybeSingle = false;
     this.onConflict = 'company_id';
   }
 
@@ -58,13 +65,13 @@ class SqliteQueryBuilder {
 
   eq(column, value) {
     this.whereConditions.push(`${column} = ?`);
-    this.whereParams.push(value);
+    this.whereParams.push(sanitizeValue(value));
     return this;
   }
 
   neq(column, value) {
     this.whereConditions.push(`${column} != ?`);
-    this.whereParams.push(value);
+    this.whereParams.push(sanitizeValue(value));
     return this;
   }
 
@@ -74,7 +81,7 @@ class SqliteQueryBuilder {
     } else {
       const placeholders = values.map(() => '?').join(',');
       this.whereConditions.push(`${column} IN (${placeholders})`);
-      this.whereParams.push(...values);
+      this.whereParams.push(...values.map(sanitizeValue));
     }
     return this;
   }
@@ -93,7 +100,7 @@ class SqliteQueryBuilder {
           this.whereParams.push(`%${val}%`);
         } else {
           subConds.push(`${col} = ?`);
-          this.whereParams.push(val);
+          this.whereParams.push(sanitizeValue(val));
         }
       }
     });
@@ -108,6 +115,11 @@ class SqliteQueryBuilder {
     return this;
   }
 
+  limit(val) {
+    this.limitVal = val;
+    return this;
+  }
+
   range(from, to) {
     this.offsetVal = from;
     this.limitVal = to - from + 1;
@@ -116,6 +128,11 @@ class SqliteQueryBuilder {
 
   single() {
     this.isSingle = true;
+    return this;
+  }
+
+  maybeSingle() {
+    this.isMaybeSingle = true;
     return this;
   }
 
@@ -176,6 +193,10 @@ class SqliteQueryBuilder {
         return item;
       });
 
+      if (this.isMaybeSingle) {
+        return { data: formatted[0] || null, error: null, count: formatted.length > 0 ? 1 : 0 };
+      }
+
       if (this.isSingle) {
         if (formatted.length === 0) {
           return { data: null, error: { message: 'Row not found', code: 'PGRST116' }, count: 0 };
@@ -206,7 +227,7 @@ class SqliteQueryBuilder {
           throw new Error(`No insertable columns found for table ${this.tableName}`);
         }
         const placeholders = keys.map(() => '?').join(',');
-        const values = keys.map((key) => itemToInsert[key]);
+        const values = keys.map((key) => sanitizeValue(itemToInsert[key]));
 
         const sql = `INSERT INTO ${this.tableName} (${keys.join(',')}) VALUES (${placeholders})`;
         const info = db.prepare(sql).run(...values);
@@ -215,7 +236,7 @@ class SqliteQueryBuilder {
         inserted.push(formatRow(row));
       }
 
-      if (this.isSingle) {
+      if (this.isSingle || this.isMaybeSingle) {
         return { data: inserted[0] || null, error: null };
       }
       return { data: inserted, error: null };
@@ -224,15 +245,16 @@ class SqliteQueryBuilder {
     if (this.operation === 'update') {
       const keys = Object.keys(this.updateData);
       const setClause = keys.map((k) => `${k} = ?`).join(',');
-      const values = Object.values(this.updateData);
+      const values = Object.values(this.updateData).map(sanitizeValue);
+      const cleanWhereParams = this.whereParams.map(sanitizeValue);
 
       const sql = `UPDATE ${this.tableName} SET ${setClause}${whereClause}`;
-      db.prepare(sql).run(...values, ...this.whereParams);
+      db.prepare(sql).run(...values, ...cleanWhereParams);
 
       const fetchSql = `SELECT * FROM ${this.tableName}${whereClause}`;
-      const rows = db.prepare(fetchSql).all(...this.whereParams).map(formatRow);
+      const rows = db.prepare(fetchSql).all(...cleanWhereParams).map(formatRow);
 
-      if (this.isSingle) {
+      if (this.isSingle || this.isMaybeSingle) {
         return { data: rows[0] || null, error: null };
       }
       return { data: rows, error: null };
@@ -245,20 +267,20 @@ class SqliteQueryBuilder {
       if (!item.createdAt && !item.created_at) item.createdAt = now;
 
       const conflictCol = this.onConflict || 'company_id';
-      const conflictVal = item[conflictCol];
+      const conflictVal = sanitizeValue(item[conflictCol]);
       const existing = db.prepare(`SELECT * FROM ${this.tableName} WHERE ${conflictCol} = ?`).get(conflictVal);
 
       if (existing) {
         const keys = Object.keys(item).filter((k) => k !== conflictCol && k !== 'id');
         const setClause = keys.map((k) => `${k} = ?`).join(',');
-        const values = keys.map((k) => item[k]);
+        const values = keys.map((k) => sanitizeValue(item[k]));
 
         const sql = `UPDATE ${this.tableName} SET ${setClause} WHERE ${conflictCol} = ?`;
         db.prepare(sql).run(...values, conflictVal);
       } else {
         const keys = Object.keys(item);
         const placeholders = keys.map(() => '?').join(',');
-        const values = Object.values(item);
+        const values = Object.values(item).map(sanitizeValue);
         const sql = `INSERT INTO ${this.tableName} (${keys.join(',')}) VALUES (${placeholders})`;
         db.prepare(sql).run(...values);
       }
@@ -269,11 +291,12 @@ class SqliteQueryBuilder {
     }
 
     if (this.operation === 'delete') {
+      const cleanWhereParams = this.whereParams.map(sanitizeValue);
       const fetchSql = `SELECT * FROM ${this.tableName}${whereClause}`;
-      const rows = db.prepare(fetchSql).all(...this.whereParams).map(formatRow);
+      const rows = db.prepare(fetchSql).all(...cleanWhereParams).map(formatRow);
 
       const sql = `DELETE FROM ${this.tableName}${whereClause}`;
-      db.prepare(sql).run(...this.whereParams);
+      db.prepare(sql).run(...cleanWhereParams);
 
       return { data: rows, error: null };
     }

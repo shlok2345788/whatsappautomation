@@ -61,6 +61,51 @@ const ExcelContacts = () => {
     }
   };
 
+  const handleUploadAndSaveDirectly = async (e) => {
+    e.preventDefault();
+    if (!file) {
+      return setError('Please select an Excel file (.xlsx or .xls)');
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    setImporting(true);
+    setError('');
+    setSuccessMsg('');
+
+    try {
+      // Step 1: Upload and parse
+      const uploadRes = await API.post('/excel/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      const parsed = uploadRes.data;
+      const validRecords = (parsed.records || []).filter((r) => r.isValid);
+
+      if (validRecords.length === 0) {
+        setError(`Found ${parsed.totalRecords} records, but none had a valid name and mobile number.`);
+        setPreviewData(parsed);
+        return;
+      }
+
+      // Step 2: Confirm import directly
+      const importRes = await API.post('/excel/confirm', {
+        contacts: validRecords,
+        replaceExisting: false
+      });
+
+      setSuccessMsg(importRes.data.message || `Successfully saved ${validRecords.length} contacts!`);
+      setPreviewData(null);
+      setFile(null);
+      fetchContacts();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to process and save Excel file');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const handleConfirmImport = async () => {
     if (!previewData || !previewData.records) return;
 
@@ -117,25 +162,45 @@ const ExcelContacts = () => {
             <h3 className="card-title">Upload Excel File</h3>
           </div>
 
-          <form onSubmit={handleUploadAndParse} style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-            <div style={{ flex: 1, position: 'relative' }}>
-              <input
-                type="file"
-                accept=".xlsx, .xls"
-                onChange={handleFileChange}
-                className="form-input"
-                style={{ padding: '8px' }}
-              />
+          <form style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: '240px' }}>
+                <input
+                  type="file"
+                  accept=".xlsx, .xls"
+                  onChange={handleFileChange}
+                  className="form-input"
+                  style={{ padding: '8px' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={handleUploadAndSaveDirectly}
+                  disabled={importing || parsing || !file}
+                  className="btn btn-primary"
+                  style={{ backgroundColor: '#16a34a', borderColor: '#16a34a' }}
+                >
+                  <Upload size={16} />
+                  {importing ? 'Saving Contacts...' : 'Upload & Save Contacts'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleUploadAndParse}
+                  disabled={parsing || importing || !file}
+                  className="btn btn-secondary"
+                >
+                  {parsing ? 'Parsing...' : 'Preview First'}
+                </button>
+              </div>
             </div>
 
-            <button type="submit" disabled={parsing || !file} className="btn btn-primary">
-              <Upload size={16} />
-              {parsing ? 'Parsing Excel...' : 'Upload & Preview'}
-            </button>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+              Supports <strong>.xlsx</strong> and <strong>.xls</strong>. Automatically detects <strong>Name</strong> and <strong>Mobile</strong> columns, normalizes phone numbers (adding Indian country code 91 if needed).
+            </p>
           </form>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>
-            Supports .xlsx and .xls formats. Automatically detects Name and Mobile columns and normalizes phone numbers.
-          </p>
         </div>
       )}
 
@@ -143,13 +208,23 @@ const ExcelContacts = () => {
       {previewData && (
         <div className="card">
           <div className="card-header">
-            <h3 className="card-title">Contacts Import Preview</h3>
+            <div>
+              <h3 className="card-title">Contacts Import Preview</h3>
+              <p style={{ fontSize: '13px', color: '#16a34a', margin: '4px 0 0 0', fontWeight: 500 }}>
+                👉 Click "Save Valid Contacts" below to store them in your database for PDF matching.
+              </p>
+            </div>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button onClick={() => setPreviewData(null)} className="btn btn-secondary btn-sm">
                 Cancel
               </button>
-              <button onClick={handleConfirmImport} disabled={importing} className="btn btn-primary btn-sm">
-                {importing ? 'Importing...' : 'Import Contacts'}
+              <button
+                onClick={handleConfirmImport}
+                disabled={importing || previewData.validCount === 0}
+                className="btn btn-primary btn-sm"
+                style={{ backgroundColor: '#16a34a', borderColor: '#16a34a' }}
+              >
+                {importing ? 'Saving...' : `Save Valid Contacts (${previewData.validCount})`}
               </button>
             </div>
           </div>
