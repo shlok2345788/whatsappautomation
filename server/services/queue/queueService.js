@@ -1,5 +1,6 @@
 const { supabase } = require('../supabaseClient');
 const whatsappService = require('../whatsapp/whatsappService');
+const gupshupService = require('../whatsapp/gupshupService');
 
 const activeQueues = {};
 
@@ -137,24 +138,43 @@ const processSendQueue = async (companyId, queueItems, customMessageTemplate, io
     }
 
     try {
-      const status = whatsappService.getClientStatus(companyId);
-      if (status !== 'CONNECTED') {
-        throw new Error('WhatsApp connection lost during sending process');
+      const provider = settingsRow?.provider || 'gupshup';
+      let messageId = '';
+
+      if (provider === 'gupshup') {
+        const sendResult = await gupshupService.sendPdfDocument(
+          companyId,
+          item.phone,
+          item.pdfPath,
+          item.pdfFilename,
+          messageText
+        );
+        messageId = sendResult.messageId || '';
+      } else {
+        const status = whatsappService.getClientStatus(companyId);
+        if (status !== 'CONNECTED') {
+          throw new Error('WhatsApp connection lost during sending process');
+        }
+
+        await whatsappService.sendPdfDocument(
+          companyId,
+          item.phone,
+          item.pdfPath,
+          item.pdfFilename,
+          messageText
+        );
       }
 
-      await whatsappService.sendPdfDocument(
-        companyId,
-        item.phone,
-        item.pdfPath,
-        item.pdfFilename,
-        messageText
-      );
-
-      await supabase.from('message_logs').update({ status: 'Sent', sentAt: new Date().toISOString(), errorReason: '' }).eq('id', logId);
+      await supabase.from('message_logs').update({
+        status: 'Sent',
+        providerMessageId: messageId,
+        sentAt: new Date().toISOString(),
+        errorReason: ''
+      }).eq('id', logId);
       sentCount++;
 
       if (io) {
-        io.to(roomName).emit('message:sent', { logId, contactName: item.name });
+        io.to(roomName).emit('message:sent', { logId, providerMessageId: messageId, contactName: item.name });
       }
     } catch (err) {
       console.error(`[Queue company_${companyId}] Failed to send to ${item.name} (${item.phone}): ${err.message}`);

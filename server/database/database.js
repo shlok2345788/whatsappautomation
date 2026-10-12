@@ -169,12 +169,32 @@ const initDatabase = () => {
     CREATE TABLE IF NOT EXISTS settings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       company_id TEXT NOT NULL UNIQUE,
+      provider TEXT DEFAULT 'gupshup',
+      gupshupAppName TEXT DEFAULT '',
+      gupshupApiKey TEXT DEFAULT '',
+      gupshupSourcePhone TEXT DEFAULT '',
       delayBetweenMessages INTEGER DEFAULT 4,
       messageTemplate TEXT DEFAULT 'Hello {{name}},\n\nPlease find your document attached.\n\nThank you.',
       autoRetryFailed INTEGER DEFAULT 0,
       updatedAt TEXT NOT NULL
     );
   `);
+
+  // Run incremental column additions safely if tables existed
+  const addColumnSafely = (table, colDef) => {
+    try {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${colDef}`);
+    } catch (e) {
+      // Column already exists, safe to ignore
+    }
+  };
+
+  addColumnSafely('settings', "provider TEXT DEFAULT 'gupshup'");
+  addColumnSafely('settings', "gupshupAppName TEXT DEFAULT ''");
+  addColumnSafely('settings', "gupshupApiKey TEXT DEFAULT ''");
+  addColumnSafely('settings', "gupshupSourcePhone TEXT DEFAULT ''");
+  addColumnSafely('message_logs', "providerMessageId TEXT DEFAULT ''");
+  addColumnSafely('message_logs', "deliveryStatus TEXT DEFAULT ''");
 
   console.log('[SQLite Database] Multi-company Schema Initialized at:', dbPath);
 };

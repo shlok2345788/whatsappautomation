@@ -13,18 +13,39 @@ const getSettings = async (req, res, next) => {
     if (error && error.code !== 'PGRST116') throw error;
 
     if (!settings) {
-      // Should have been auto-created by the DB trigger, but create as fallback
       const defaultTpl = "Hello {{name}},\n\nPlease find your document attached.\n\nThank you.";
       const { data: created, error: insertErr } = await supabase
         .from('settings')
-        .insert({ company_id: companyId, delayBetweenMessages: 4, messageTemplate: defaultTpl, autoRetryFailed: false })
+        .insert({
+          company_id: companyId,
+          provider: 'gupshup',
+          gupshupAppName: process.env.GUPSHUP_APP_NAME || '',
+          gupshupApiKey: '',
+          gupshupSourcePhone: process.env.GUPSHUP_SOURCE_PHONE || '',
+          delayBetweenMessages: 4,
+          messageTemplate: defaultTpl,
+          autoRetryFailed: false,
+          updatedAt: new Date().toISOString()
+        })
         .select()
         .single();
       if (insertErr) throw insertErr;
       return res.json(created);
     }
 
-    res.json(settings);
+    // Mask sensitive API Key for security in response
+    const safeSettings = { ...settings };
+    if (safeSettings.gupshupApiKey) {
+      const keyLen = safeSettings.gupshupApiKey.length;
+      safeSettings.gupshupApiKeyMasked = keyLen > 4
+        ? '••••••••' + safeSettings.gupshupApiKey.slice(-4)
+        : '••••••••';
+      safeSettings.hasApiKey = true;
+    } else {
+      safeSettings.hasApiKey = Boolean(process.env.GUPSHUP_API_KEY);
+    }
+
+    res.json(safeSettings);
   } catch (error) {
     next(error);
   }
@@ -33,9 +54,23 @@ const getSettings = async (req, res, next) => {
 const updateSettings = async (req, res, next) => {
   try {
     const companyId = req.companyId;
-    const { delayBetweenMessages, messageTemplate, autoRetryFailed } = req.body;
+    const {
+      provider,
+      gupshupAppName,
+      gupshupApiKey,
+      gupshupSourcePhone,
+      delayBetweenMessages,
+      messageTemplate,
+      autoRetryFailed
+    } = req.body;
 
     const updates = {};
+    if (provider !== undefined) updates.provider = provider;
+    if (gupshupAppName !== undefined) updates.gupshupAppName = gupshupAppName;
+    if (gupshupSourcePhone !== undefined) updates.gupshupSourcePhone = gupshupSourcePhone;
+    if (gupshupApiKey !== undefined && !gupshupApiKey.includes('••••')) {
+      updates.gupshupApiKey = gupshupApiKey;
+    }
     if (delayBetweenMessages !== undefined) updates.delayBetweenMessages = Number(delayBetweenMessages);
     if (messageTemplate !== undefined) updates.messageTemplate = messageTemplate;
     if (autoRetryFailed !== undefined) updates.autoRetryFailed = Boolean(autoRetryFailed);

@@ -19,6 +19,7 @@ const matchingRoutes = require('./routes/matchingRoutes');
 const queueRoutes = require('./routes/queueRoutes');
 const historyRoutes = require('./routes/historyRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
+const webhookRoutes = require('./routes/webhookRoutes');
 const { storageProvider } = require('./services/supabaseClient');
 
 // Initialize DB Connection
@@ -97,6 +98,7 @@ app.use('/api/matching', matchingRoutes);
 app.use('/api/messages', queueRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/webhook', webhookRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

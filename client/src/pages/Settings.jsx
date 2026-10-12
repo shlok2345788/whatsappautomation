@@ -10,6 +10,10 @@ const Settings = () => {
   const { user, updateUserProfile } = useAuth();
 
   // Sending settings state
+  const [provider, setProvider] = useState('gupshup');
+  const [gupshupAppName, setGupshupAppName] = useState('');
+  const [gupshupApiKey, setGupshupApiKey] = useState('');
+  const [gupshupSourcePhone, setGupshupSourcePhone] = useState('');
   const [delayBetweenMessages, setDelayBetweenMessages] = useState(4);
   const [messageTemplate, setMessageTemplate] = useState("Hello {{name}},\n\nPlease find your document attached.\n\nThank you.");
   const [savingSettings, setSavingSettings] = useState(false);
@@ -28,6 +32,10 @@ const Settings = () => {
     API.get('/settings')
       .then((res) => {
         if (res.data) {
+          if (res.data.provider) setProvider(res.data.provider);
+          if (res.data.gupshupAppName) setGupshupAppName(res.data.gupshupAppName);
+          if (res.data.gupshupApiKeyMasked) setGupshupApiKey(res.data.gupshupApiKeyMasked);
+          if (res.data.gupshupSourcePhone) setGupshupSourcePhone(res.data.gupshupSourcePhone);
           setDelayBetweenMessages(res.data.delayBetweenMessages || 4);
           if (res.data.messageTemplate) setMessageTemplate(res.data.messageTemplate);
         }
@@ -43,10 +51,14 @@ const Settings = () => {
 
     try {
       await API.put('/settings', {
+        provider,
+        gupshupAppName,
+        gupshupApiKey,
+        gupshupSourcePhone,
         delayBetweenMessages: Number(delayBetweenMessages),
         messageTemplate
       });
-      setSuccessMsg('Sending configuration saved successfully');
+      setSuccessMsg('Configuration saved successfully');
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to save settings');
     } finally {
@@ -84,29 +96,83 @@ const Settings = () => {
       {error && <div className="alert alert-danger">{error}</div>}
       {successMsg && <div className="alert alert-success">{successMsg}</div>}
 
-      {/* WhatsApp Connection Section */}
+      {/* WhatsApp Provider & Credentials */}
       <div className="card">
         <div className="card-header">
-          <h3 className="card-title">WhatsApp Session Control</h3>
+          <h3 className="card-title">WhatsApp Provider Configuration</h3>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '4px' }}>Session Status</div>
-            <StatusBadge status={wsStatus} />
-          </div>
+        <div className="form-group">
+          <label className="form-label">Delivery Provider</label>
+          <select
+            className="form-select"
+            value={provider}
+            onChange={(e) => setProvider(e.target.value)}
+            style={{ maxWidth: '300px' }}
+          >
+            <option value="gupshup">Official WhatsApp Business API (Gupshup)</option>
+            <option value="whatsapp-web">WhatsApp Web (Browser Session)</option>
+          </select>
+          <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+            Recommended: Official Gupshup WABA for high deliverability, automated webhooks, and multi-tenant reliability.
+          </span>
+        </div>
 
-          <div style={{ display: 'flex', gap: '8px' }}>
-            {wsStatus !== 'CONNECTED' ? (
-              <button onClick={connect} className="btn btn-primary btn-sm">
-                <QrCode size={14} /> Connect WhatsApp
-              </button>
-            ) : (
-              <button onClick={() => disconnect(true)} className="btn btn-danger btn-sm">
-                <Power size={14} /> Logout Session
-              </button>
-            )}
+        {provider === 'gupshup' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Gupshup App Name</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="e.g. MyEnterpriseApp"
+                value={gupshupAppName}
+                onChange={(e) => setGupshupAppName(e.target.value)}
+              />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Gupshup API Key</label>
+              <input
+                type="password"
+                className="form-input"
+                placeholder="Enter your Gupshup API Key"
+                value={gupshupApiKey}
+                onChange={(e) => setGupshupApiKey(e.target.value)}
+              />
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                Leave empty to fallback to system environment variable credentials.
+              </span>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Sender Phone Number (with Country Code)</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="e.g. 919876543210"
+                value={gupshupSourcePhone}
+                onChange={(e) => setGupshupSourcePhone(e.target.value)}
+              />
+            </div>
           </div>
-        </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
+            <div>
+              <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '4px' }}>Web Session Status</div>
+              <StatusBadge status={wsStatus} />
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {wsStatus !== 'CONNECTED' ? (
+                <button onClick={connect} className="btn btn-primary btn-sm">
+                  <QrCode size={14} /> Connect WhatsApp
+                </button>
+              ) : (
+                <button onClick={() => disconnect(true)} className="btn btn-danger btn-sm">
+                  <Power size={14} /> Logout Session
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Sending Configuration */}
