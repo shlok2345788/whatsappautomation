@@ -178,6 +178,21 @@ const initDatabase = () => {
       autoRetryFailed INTEGER DEFAULT 0,
       updatedAt TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS queue_batches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running',
+      totalItems INTEGER DEFAULT 0,
+      processedItems INTEGER DEFAULT 0,
+      sentCount INTEGER DEFAULT 0,
+      failedCount INTEGER DEFAULT 0,
+      skippedCount INTEGER DEFAULT 0,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_queue_batches_company ON queue_batches(company_id, status);
   `);
 
   // Run incremental column additions safely if tables existed

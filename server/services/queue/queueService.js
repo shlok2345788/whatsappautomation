@@ -4,6 +4,33 @@ const gupshupService = require('../whatsapp/gupshupService');
 
 const activeQueues = {};
 
+/**
+ * Crash Recovery: Recovers interrupted queue batches and message logs from ungraceful server restarts.
+ */
+const recoverOrphanedQueues = async () => {
+  try {
+    const nowIso = new Date().toISOString();
+    // Mark interrupted batches
+    await supabase
+      .from('queue_batches')
+      .update({ status: 'interrupted', updatedAt: nowIso })
+      .eq('status', 'running');
+
+    // Mark dangling "Sending" logs so they can be safely retried without being locked
+    await supabase
+      .from('message_logs')
+      .update({
+        status: 'Failed',
+        errorReason: 'Dispatch interrupted by server restart — safe to retry'
+      })
+      .eq('status', 'Sending');
+
+    console.log('[Queue Service] Crash recovery completed: orphaned jobs reconciled.');
+  } catch (err) {
+    console.warn('[Queue Service] Notice during crash recovery check:', err.message);
+  }
+};
+
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const formatTemplate = (template, data) => {
@@ -19,6 +46,26 @@ const processSendQueue = async (companyId, queueItems, customMessageTemplate, io
   }
 
   activeQueues[companyId] = { isRunning: true, isCancelled: false };
+
+  // Create persistent batch record in SQLite
+  const now = new Date().toISOString();
+  const { data: batchRecord } = await supabase
+    .from('queue_batches')
+    .insert({
+      company_id: companyId,
+      status: 'running',
+      totalItems: queueItems.length,
+      processedItems: 0,
+      sentCount: 0,
+      failedCount: 0,
+      skippedCount: 0,
+      createdAt: now,
+      updatedAt: now
+    })
+    .select()
+    .single();
+
+  const batchId = batchRecord?.id;
 
   let { data: settingsRow } = await supabase
     .from('settings')
@@ -204,7 +251,23 @@ const processSendQueue = async (companyId, queueItems, customMessageTemplate, io
     }
   }
 
+  const wasCancelled = activeQueues[companyId]?.isCancelled;
   activeQueues[companyId] = { isRunning: false, isCancelled: false };
+
+  // Update persistent batch record
+  if (batchId) {
+    await supabase
+      .from('queue_batches')
+      .update({
+        status: wasCancelled ? 'cancelled' : 'completed',
+        processedItems: total,
+        sentCount,
+        failedCount,
+        skippedCount,
+        updatedAt: new Date().toISOString()
+      })
+      .eq('id', batchId);
+  }
 
   const finalSummary = {
     total,
@@ -220,9 +283,16 @@ const processSendQueue = async (companyId, queueItems, customMessageTemplate, io
   return finalSummary;
 };
 
-const cancelQueue = (companyId) => {
+const cancelQueue = async (companyId) => {
   if (activeQueues[companyId]) {
     activeQueues[companyId].isCancelled = true;
+    try {
+      await supabase
+        .from('queue_batches')
+        .update({ status: 'cancelled', updatedAt: new Date().toISOString() })
+        .eq('company_id', companyId)
+        .eq('status', 'running');
+    } catch (e) {}
     return true;
   }
   return false;
@@ -232,8 +302,12 @@ const getQueueStatus = (companyId) => {
   return activeQueues[companyId] ? activeQueues[companyId].isRunning : false;
 };
 
+// Auto-run crash recovery on module startup
+recoverOrphanedQueues();
+
 module.exports = {
   processSendQueue,
   cancelQueue,
-  getQueueStatus
+  getQueueStatus,
+  recoverOrphanedQueues
 };

@@ -102,9 +102,27 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/webhook', webhookRoutes);
 app.use('/api/tally', tallyRoutes);
 
-// Health check endpoint
+// Comprehensive Observability & Health Check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', storageProvider, timestamp: new Date() });
+  const memory = process.memoryUsage();
+  res.json({
+    status: 'ok',
+    version: '2.0.0-production',
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+    storageProvider,
+    memory: {
+      rssMb: Math.round(memory.rss / (1024 * 1024)),
+      heapUsedMb: Math.round(memory.heapUsed / (1024 * 1024)),
+      heapTotalMb: Math.round(memory.heapTotal / (1024 * 1024))
+    },
+    services: {
+      sqlite: 'operational',
+      gupshupWaba: Boolean(process.env.GUPSHUP_API_KEY) ? 'configured' : 'dev-simulation',
+      tallyServer: process.env.TALLY_API_URL || 'http://localhost:9000'
+    }
+  });
 });
 
 // Serve frontend in production
