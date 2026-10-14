@@ -18,48 +18,53 @@ const normalizePhone = (phone) => {
 };
 
 /**
- * Resolves Gupshup credentials for a given company, falling back to environment variables.
+ * Resolves Gupshup credentials for a given company strictly from the tenant's connected settings.
+ * Automatic fallback to global environment sender/API keys is disabled for tenant messaging (D5).
  */
 const getCredentials = async (companyId) => {
-  let appName = process.env.GUPSHUP_APP_NAME || '';
-  let apiKey = process.env.GUPSHUP_API_KEY || '';
-  let sourcePhone = process.env.GUPSHUP_SOURCE_PHONE || '';
-  let templateId = process.env.GUPSHUP_TEMPLATE_ID || '';
+  if (!companyId) {
+    throw new Error('Tenant companyId is required to resolve messaging credentials.');
+  }
+
+  let appName = '';
+  let apiKey = '';
+  let sourcePhone = '';
+  let templateId = '';
   let baseUrl = process.env.GUPSHUP_BASE_URL || 'https://api.gupshup.io/wa/api/v1';
 
-  if (companyId) {
-    try {
-      const { data: settings } = await supabase
-        .from('settings')
-        .select('*')
-        .eq('company_id', companyId)
-        .maybeSingle();
+  try {
+    const { data: settings } = await supabase
+      .from('settings')
+      .select('*')
+      .eq('company_id', companyId)
+      .maybeSingle();
 
-      if (settings) {
-        if (settings.gupshupAppName) appName = settings.gupshupAppName;
-        if (settings.gupshupApiKey) {
-          try {
-            apiKey = decrypt(settings.gupshupApiKey);
-          } catch (e) {
-            console.warn(`[Gupshup] Failed to decrypt API key for company ${companyId}:`, e.message);
-          }
-        }
-        if (settings.gupshupSourcePhone) sourcePhone = settings.gupshupSourcePhone;
-        if (settings.gupshupTemplateId !== undefined && settings.gupshupTemplateId !== null) {
-          templateId = settings.gupshupTemplateId;
-        } else if (settings.templateId !== undefined && settings.templateId !== null) {
-          templateId = settings.templateId;
+    if (settings) {
+      if (settings.gupshupAppName) appName = settings.gupshupAppName.trim();
+      if (settings.gupshupApiKey) {
+        try {
+          apiKey = decrypt(settings.gupshupApiKey).trim();
+        } catch (e) {
+          console.warn(`[Gupshup] Failed to decrypt API key for company ${companyId}:`, e.message);
+          apiKey = '';
         }
       }
-    } catch (err) {
-      console.warn(`[Gupshup] Could not load settings for company ${companyId}:`, err.message);
+      if (settings.gupshupSourcePhone) sourcePhone = settings.gupshupSourcePhone.trim();
+      if (settings.gupshupTemplateId !== undefined && settings.gupshupTemplateId !== null) {
+        templateId = settings.gupshupTemplateId;
+      } else if (settings.templateId !== undefined && settings.templateId !== null) {
+        templateId = settings.templateId;
+      }
     }
+  } catch (err) {
+    console.warn(`[Gupshup] Could not load settings for company ${companyId}:`, err.message);
   }
 
   return {
+    companyId,
     appName,
     apiKey,
-    sourcePhone: normalizePhone(sourcePhone),
+    sourcePhone: sourcePhone ? normalizePhone(sourcePhone) : '',
     templateId,
     baseUrl: baseUrl.replace(/\/+$/, '')
   };

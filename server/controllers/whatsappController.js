@@ -25,19 +25,17 @@ const getStatus = async (req, res, next) => {
       } catch (e) {
         maskedApiKey = '••••••••';
       }
-    } else if (process.env.GUPSHUP_API_KEY) {
-      maskedApiKey = maskKey(process.env.GUPSHUP_API_KEY);
     }
 
     res.json({
       status: connection.status, // 'CONNECTED' | 'NOT_CONFIGURED' | 'CONFIG_REQUIRED' | 'ERROR'
       provider: connection.provider || 'gupshup',
       message: connection.message,
-      appName: settings?.gupshupAppName || process.env.GUPSHUP_APP_NAME || '',
-      sourcePhone: settings?.gupshupSourcePhone || process.env.GUPSHUP_SOURCE_PHONE || '',
-      templateId: settings?.gupshupTemplateId || process.env.GUPSHUP_TEMPLATE_ID || '',
+      appName: settings?.gupshupAppName || '',
+      sourcePhone: settings?.gupshupSourcePhone || '',
+      templateId: settings?.gupshupTemplateId || '',
       maskedApiKey,
-      hasApiKey: Boolean(settings?.gupshupApiKey || process.env.GUPSHUP_API_KEY),
+      hasApiKey: Boolean(settings?.gupshupApiKey),
       isSimulation: process.env.SIMULATION_MODE === 'true' && process.env.NODE_ENV !== 'production'
     });
   } catch (error) {
