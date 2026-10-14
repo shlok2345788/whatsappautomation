@@ -2,36 +2,39 @@ const jwt = require('jsonwebtoken');
 const { admin } = require('../services/firebaseAdmin');
 
 const verifyToken = async (token) => {
-  if (!token) {
+  if (!token || typeof token !== 'string' || !token.trim()) {
     throw new Error('No authentication token provided');
   }
 
+  const cleanToken = token.trim();
   let decodedToken;
+
   if (admin.apps && admin.apps.length > 0) {
     // Verify cryptographic signature via Firebase Admin SDK
-    decodedToken = await admin.auth().verifyIdToken(token);
+    try {
+      decodedToken = await admin.auth().verifyIdToken(cleanToken);
+    } catch (err) {
+      throw new Error(`Token verification failed: ${err.message}`);
+    }
   } else {
-    // Local / development JWT verification
-    const secret = process.env.JWT_SECRET || 'super_secret_jwt_key_whatsapp_pdf_sender_2026';
-    if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
-      throw new Error('Production environment requires valid Firebase Admin credentials or JWT_SECRET');
+    // Cryptographic JWT verification using configured environment secret
+    const secret = process.env.JWT_SECRET;
+    if (!secret || typeof secret !== 'string' || !secret.trim()) {
+      throw new Error('Authentication configuration is unavailable: JWT_SECRET is not configured and Firebase Admin is not initialized');
+    }
+
+    const verifyOptions = {};
+    if (process.env.JWT_AUDIENCE) {
+      verifyOptions.audience = process.env.JWT_AUDIENCE;
+    }
+    if (process.env.JWT_ISSUER) {
+      verifyOptions.issuer = process.env.JWT_ISSUER;
     }
 
     try {
-      decodedToken = jwt.verify(token, secret);
+      decodedToken = jwt.verify(cleanToken, secret.trim(), verifyOptions);
     } catch (err) {
-      // In development mode, check if token is a client Firebase token when serviceAccountKey is not set
-      if (process.env.NODE_ENV !== 'production') {
-        const decoded = jwt.decode(token);
-        if (decoded && (decoded.iss?.includes('securetoken.google.com') || decoded.sub || decoded.user_id)) {
-          console.warn('[AUTH WARNING] Development mode: Accepting Firebase client token because Firebase Admin service credentials are not configured.');
-          decodedToken = decoded;
-        } else {
-          throw new Error('Token verification failed: Invalid signature or expired token');
-        }
-      } else {
-        throw new Error('Token verification failed: Invalid signature or expired token');
-      }
+      throw new Error(`Token verification failed: ${err.message}`);
     }
   }
 
@@ -44,8 +47,8 @@ const verifyToken = async (token) => {
     id: String(uid),
     email: decodedToken.email || '',
     name: decodedToken.name || decodedToken.displayName || decodedToken.email || 'User',
-    company_name: decodedToken.name || decodedToken.displayName || 'Company',
-    companyId: String(uid)
+    company_name: decodedToken.company_name || decodedToken.name || decodedToken.displayName || 'Company',
+    companyId: String(decodedToken.companyId || uid)
   };
 };
 
