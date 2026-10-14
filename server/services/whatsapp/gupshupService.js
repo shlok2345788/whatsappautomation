@@ -64,7 +64,7 @@ const getCredentials = async (companyId) => {
 /**
  * Sends a PDF ledger document via Gupshup Enterprise WhatsApp Business API.
  */
-const sendPdfDocument = async (companyId, recipientPhone, filePath, originalFilename, caption = '') => {
+const sendPdfDocument = async (companyId, recipientPhone, filePath, originalFilename, caption = '', pdfId = null) => {
   const creds = await getCredentials(companyId);
   const destination = normalizePhone(recipientPhone);
 
@@ -113,9 +113,31 @@ const sendPdfDocument = async (companyId, recipientPhone, filePath, originalFile
     throw new Error(`Gupshup credentials are missing or incomplete (${missing.join(', ')}). Set valid credentials or configure SIMULATION_MODE in non-production.`);
   }
 
-  // Build document download URL for WhatsApp server
+  // Build secure HMAC-signed document download URL for WhatsApp server
+  let resolvedPdfId = pdfId;
+  if (!resolvedPdfId) {
+    try {
+      const { data: foundPdf } = await supabase
+        .from('pdf_files')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('originalFilename', originalFilename)
+        .maybeSingle();
+      if (foundPdf?.id) resolvedPdfId = foundPdf.id;
+    } catch (e) {
+      // Fallback
+    }
+  }
+
   const serverBase = (process.env.PUBLIC_SERVER_URL || process.env.CLIENT_URL || 'http://localhost:5000').replace(/\/+$/, '');
-  const documentUrl = `${serverBase}/api/pdfs/download-signed/${encodeURIComponent(path.basename(filePath))}`;
+  let documentUrl;
+  if (resolvedPdfId) {
+    const { createSignedPdfToken } = require('../security/signedUrlService');
+    const { token, expires } = createSignedPdfToken(resolvedPdfId, companyId, 900);
+    documentUrl = `${serverBase}/api/pdfs/download-signed/${resolvedPdfId}?token=${token}&expires=${expires}`;
+  } else {
+    documentUrl = `${serverBase}/api/pdfs/download-signed/${encodeURIComponent(path.basename(filePath))}`;
+  }
 
   // Message payload structure
   let messagePayload;
@@ -179,8 +201,18 @@ const sendPdfDocument = async (companyId, recipientPhone, filePath, originalFile
   };
 };
 
+const STATUS_HIERARCHY = {
+  'pending': 1,
+  'sending': 2,
+  'sent': 3,
+  'simulated': 3,
+  'delivered': 4,
+  'read': 5
+};
+
 /**
  * Processes incoming webhook delivery reports from Gupshup.
+ * Features idempotency, out-of-order progression protection, and tenant isolation.
  */
 const handleWebhookEvent = async (eventBody, io) => {
   if (!eventBody) return { handled: false, reason: 'Empty payload' };
@@ -195,9 +227,10 @@ const handleWebhookEvent = async (eventBody, io) => {
     return { handled: false, reason: 'Not a message delivery event or missing messageId' };
   }
 
-  console.log(`[Gupshup Webhook] Received ${deliveryStatus} event for messageId: ${messageId}`);
+  const safeMsgId = String(messageId).slice(0, 32);
+  console.log(`[Gupshup Webhook] Received ${deliveryStatus} event for messageId: ${safeMsgId}`);
 
-  // Find matching message log entry
+  // Find matching message log entry strictly by provider message ID
   const { data: logEntry, error } = await supabase
     .from('message_logs')
     .select('*')
@@ -205,22 +238,51 @@ const handleWebhookEvent = async (eventBody, io) => {
     .maybeSingle();
 
   if (error || !logEntry) {
-    console.warn(`[Gupshup Webhook] No matching log entry found for messageId: ${messageId}`);
+    console.warn(`[Gupshup Webhook] No matching log entry found for messageId: ${safeMsgId}`);
     return { handled: false, reason: 'Log entry not found' };
   }
 
+  const currentDelivery = (logEntry.deliveryStatus || logEntry.status || '').toLowerCase();
+  const newDelivery = String(deliveryStatus).toLowerCase();
+
+  // 1. Idempotency check: duplicate webhook events
+  if (currentDelivery === newDelivery) {
+    return {
+      handled: true,
+      duplicate: true,
+      logId: logEntry.id,
+      status: logEntry.status,
+      deliveryStatus: logEntry.deliveryStatus
+    };
+  }
+
+  // 2. Out-of-order check: prevent status regression (e.g. Read -> Delivered or Delivered -> Sent)
+  const currentRank = STATUS_HIERARCHY[currentDelivery] || 0;
+  const newRank = STATUS_HIERARCHY[newDelivery] || 0;
+
+  if (newRank > 0 && currentRank > newRank) {
+    console.warn(`[Gupshup Webhook] Ignored out-of-order status regression from ${currentDelivery} to ${newDelivery} for message ${logEntry.id}`);
+    return {
+      handled: true,
+      ignoredRegression: true,
+      logId: logEntry.id,
+      currentStatus: logEntry.status,
+      deliveryStatus: logEntry.deliveryStatus
+    };
+  }
+
   let mappedStatus = logEntry.status;
-  if (deliveryStatus === 'delivered') mappedStatus = 'Delivered';
-  else if (deliveryStatus === 'read') mappedStatus = 'Read';
-  else if (deliveryStatus === 'failed') mappedStatus = 'Failed';
-  else if (deliveryStatus === 'sent') mappedStatus = 'Sent';
+  if (newDelivery === 'delivered') mappedStatus = 'Delivered';
+  else if (newDelivery === 'read') mappedStatus = 'Read';
+  else if (newDelivery === 'failed') mappedStatus = 'Failed';
+  else if (newDelivery === 'sent') mappedStatus = 'Sent';
 
   const updates = {
-    deliveryStatus,
+    deliveryStatus: newDelivery,
     status: mappedStatus
   };
 
-  if (deliveryStatus === 'failed' && (payload.cause || payload.reason)) {
+  if (newDelivery === 'failed' && (payload.cause || payload.reason)) {
     updates.errorReason = payload.cause || payload.reason;
   }
 
@@ -236,7 +298,7 @@ const handleWebhookEvent = async (eventBody, io) => {
       logId: logEntry.id,
       providerMessageId: messageId,
       status: mappedStatus,
-      deliveryStatus,
+      deliveryStatus: newDelivery,
       contactName: logEntry.contactName,
       phone: logEntry.phone
     });
@@ -246,7 +308,7 @@ const handleWebhookEvent = async (eventBody, io) => {
     handled: true,
     logId: logEntry.id,
     newStatus: mappedStatus,
-    deliveryStatus
+    deliveryStatus: newDelivery
   };
 };
 

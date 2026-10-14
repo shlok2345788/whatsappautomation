@@ -10,7 +10,7 @@ const {
 const { protect } = require('../middleware/authMiddleware');
 const { uploadPdf } = require('../middleware/uploadMiddleware');
 
-router.get('/download-signed/:filename', downloadSignedPdf);
+router.get('/download-signed/:identifier', downloadSignedPdf);
 router.get('/:id/file', protect, downloadPdfFile);
 router.post('/upload-files', protect, uploadPdf.array('files', 500), uploadFiles);
 router.get('/', protect, getPdfFiles);

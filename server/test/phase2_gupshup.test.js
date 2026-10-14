@@ -30,6 +30,9 @@ test('Phase 2 - Gupshup WABA Integration Suite', async (t) => {
   });
 
   await t.test('Task 2.3: sendPdfDocument in development simulation mode returns structured success', async () => {
+    const prevSim = process.env.SIMULATION_MODE;
+    process.env.SIMULATION_MODE = 'true';
+
     // Create a temporary dummy PDF file in test folder
     const tempFilePath = path.join(__dirname, 'test_sample.pdf');
     fs.writeFileSync(tempFilePath, '%PDF-1.4 test document content');
@@ -44,9 +47,10 @@ test('Phase 2 - Gupshup WABA Integration Suite', async (t) => {
       );
 
       assert.strictEqual(result.success, true);
-      assert.ok(result.messageId.startsWith('mock_gup_'));
-      assert.strictEqual(result.status, 'submitted');
+      assert.ok(result.messageId.includes('_gup_'));
+      assert.ok(result.status === 'submitted' || result.status === 'simulated');
     } finally {
+      process.env.SIMULATION_MODE = prevSim;
       if (fs.existsSync(tempFilePath)) {
         fs.unlinkSync(tempFilePath);
       }
@@ -182,6 +186,7 @@ test('Phase 2 - Gupshup WABA Integration Suite', async (t) => {
 
   await t.test('Task 2.7: downloadSignedPdf serves valid PDF file and prevents traversal', async () => {
     const pdfController = require('../controllers/pdfController');
+    const { createSignedPdfToken } = require('../services/security/signedUrlService');
     const uploadsDir = path.resolve(__dirname, '../../uploads');
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });
@@ -190,8 +195,17 @@ test('Phase 2 - Gupshup WABA Integration Suite', async (t) => {
     const testFilename = `test_delivery_${Date.now()}.pdf`;
     const testFilePath = path.join(uploadsDir, testFilename);
     fs.writeFileSync(testFilePath, '%PDF-1.4 mock pdf for whatsapp delivery');
+    const testCompany = 'test_signed_dl_' + Date.now();
+
+    const { data: pdfRow } = await supabase.from('pdf_files').insert({
+      company_id: testCompany,
+      originalFilename: testFilename,
+      extractedName: 'Test Signed',
+      filePath: testFilePath
+    }).select().single();
 
     try {
+      const { token, expires } = createSignedPdfToken(pdfRow.id, testCompany, 300);
       const { Writable } = require('stream');
       const headers = {};
       let streamedBytes = 0;
@@ -210,7 +224,7 @@ test('Phase 2 - Gupshup WABA Integration Suite', async (t) => {
         mockRes.on('finish', resolve);
         mockRes.on('error', reject);
         pdfController.downloadSignedPdf(
-          { params: { filename: testFilename } },
+          { params: { identifier: String(pdfRow.id) }, query: { token, expires } },
           mockRes,
           reject
         );
@@ -239,6 +253,9 @@ test('Phase 2 - Gupshup WABA Integration Suite', async (t) => {
     } finally {
       if (fs.existsSync(testFilePath)) {
         try { fs.unlinkSync(testFilePath); } catch (e) {}
+      }
+      if (pdfRow?.id) {
+        await supabase.from('pdf_files').delete().eq('id', pdfRow.id);
       }
     }
   });

@@ -40,32 +40,64 @@ const downloadPdfFile = async (req, res, next) => {
   }
 };
 
+const { verifySignedPdfToken } = require('../services/security/signedUrlService');
+
 /**
  * Public document delivery endpoint allowing WhatsApp media servers
- * to download the PDF attachment securely.
+ * to download the PDF attachment securely using a short-lived HMAC token.
  */
 const downloadSignedPdf = async (req, res, next) => {
   try {
-    const { filename } = req.params;
-    if (!filename) {
-      return res.status(400).json({ message: 'Filename required' });
+    const params = req.params || {};
+    const reqQuery = req.query || {};
+    const targetIdOrName = params.identifier || params.filename;
+    const { token, expires } = reqQuery;
+
+    if (!targetIdOrName) {
+      return res.status(400).json({ message: 'Document identifier required' });
     }
 
-    const decodedFilename = decodeURIComponent(filename);
-    const uploadsDir = path.resolve(process.env.UPLOADS_DIR || path.join(__dirname, '../../uploads'));
-    const safePath = path.resolve(uploadsDir, path.basename(decodedFilename));
+    if (!token || !expires) {
+      return res.status(403).json({ message: 'Access denied: Valid signature token and expiration required' });
+    }
 
-    if (!safePath.startsWith(uploadsDir)) {
+    // Resolve PDF from database record
+    let dbQuery = supabase.from('pdf_files').select('*');
+    if (/^\d+$/.test(targetIdOrName)) {
+      dbQuery = dbQuery.eq('id', parseInt(targetIdOrName, 10));
+    } else {
+      dbQuery = dbQuery.eq('originalFilename', decodeURIComponent(targetIdOrName));
+    }
+
+    const { data: pdf, error: dbErr } = await dbQuery.maybeSingle();
+
+    if (dbErr || !pdf) {
+      return res.status(404).json({ message: 'PDF document not found' });
+    }
+
+    // Verify HMAC signature, expiration, and tenant binding
+    const verification = verifySignedPdfToken(pdf.id, pdf.company_id, expires, token);
+    if (!verification.valid) {
+      const truncatedToken = typeof token === 'string' ? `${token.slice(0, 8)}...` : 'unknown';
+      console.warn(`[Signed PDF] Access rejected for pdf ${pdf.id} (tenant: ${pdf.company_id}, token: ${truncatedToken}): ${verification.reason}`);
+      return res.status(403).json({ message: `Access denied: ${verification.reason}` });
+    }
+
+    const resolvedPath = path.resolve(pdf.filePath);
+    const uploadsDir = path.resolve(process.env.UPLOADS_DIR || path.join(__dirname, '../../uploads'));
+
+    // Prevent directory traversal attacks
+    if (!resolvedPath.startsWith(uploadsDir)) {
       return res.status(403).json({ message: 'Access denied: Invalid file location' });
     }
 
-    if (!fs.existsSync(safePath)) {
+    if (!fs.existsSync(resolvedPath)) {
       return res.status(404).json({ message: 'File not found on storage disk' });
     }
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(path.basename(safePath))}"`);
-    const stream = fs.createReadStream(safePath);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(pdf.originalFilename)}"`);
+    const stream = fs.createReadStream(resolvedPath);
     stream.pipe(res);
   } catch (error) {
     next(error);
