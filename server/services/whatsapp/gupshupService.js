@@ -45,7 +45,11 @@ const getCredentials = async (companyId) => {
           }
         }
         if (settings.gupshupSourcePhone) sourcePhone = settings.gupshupSourcePhone;
-        if (settings.gupshupTemplateId) templateId = settings.gupshupTemplateId;
+        if (settings.gupshupTemplateId !== undefined && settings.gupshupTemplateId !== null) {
+          templateId = settings.gupshupTemplateId;
+        } else if (settings.templateId !== undefined && settings.templateId !== null) {
+          templateId = settings.templateId;
+        }
       }
     } catch (err) {
       console.warn(`[Gupshup] Could not load settings for company ${companyId}:`, err.message);
@@ -64,7 +68,7 @@ const getCredentials = async (companyId) => {
 /**
  * Sends a PDF ledger document via Gupshup Enterprise WhatsApp Business API.
  */
-const sendPdfDocument = async (companyId, recipientPhone, filePath, originalFilename, caption = '', pdfId = null) => {
+const sendPdfDocument = async (companyId, recipientPhone, filePath, originalFilename, caption = '', pdfId = null, templateParams = null) => {
   const creds = await getCredentials(companyId);
   const destination = normalizePhone(recipientPhone);
 
@@ -75,42 +79,6 @@ const sendPdfDocument = async (companyId, recipientPhone, filePath, originalFile
   // Validate that the PDF file exists on local storage
   if (!filePath || !fs.existsSync(filePath)) {
     throw new Error(`PDF document does not exist at path: ${filePath}`);
-  }
-
-  const isConfigured = Boolean(
-    creds.apiKey &&
-    creds.apiKey !== 'your_gupshup_api_key_here' &&
-    creds.sourcePhone &&
-    creds.appName
-  );
-
-  const isProduction = process.env.NODE_ENV === 'production';
-  const isSimulationExplicit = process.env.SIMULATION_MODE === 'true';
-
-  if (isProduction && isSimulationExplicit) {
-    throw new Error('Simulation mode is strictly prohibited in production environment.');
-  }
-
-  if (!isConfigured) {
-    // Only allow simulation if explicitly enabled in non-production environments
-    if (!isProduction && isSimulationExplicit) {
-      const mockMessageId = `sim_gup_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      console.log(`[Gupshup SIMULATION] Dispatched simulated PDF to ${destination} for ${originalFilename} (ID: ${mockMessageId})`);
-      return {
-        success: true,
-        isSimulation: true,
-        messageId: mockMessageId,
-        status: 'simulated',
-        provider: 'gupshup-simulated'
-      };
-    }
-
-    const missing = [];
-    if (!creds.apiKey || creds.apiKey === 'your_gupshup_api_key_here') missing.push('API Key');
-    if (!creds.sourcePhone) missing.push('Source Phone');
-    if (!creds.appName) missing.push('App Name');
-
-    throw new Error(`Gupshup credentials are missing or incomplete (${missing.join(', ')}). Set valid credentials or configure SIMULATION_MODE in non-production.`);
   }
 
   // Build secure HMAC-signed document download URL for WhatsApp server
@@ -142,11 +110,26 @@ const sendPdfDocument = async (companyId, recipientPhone, filePath, originalFile
   // Message payload structure
   let messagePayload;
   if (creds.templateId) {
+    const trimmedTplId = String(creds.templateId).trim();
+    if (!trimmedTplId) {
+      throw new Error('Configured WhatsApp templateId is invalid or empty.');
+    }
+
+    const rawParams = (templateParams && Array.isArray(templateParams) && templateParams.length > 0)
+      ? templateParams
+      : [caption || originalFilename || 'Account Statement'];
+    const resolvedParams = rawParams.map(p => (p === null || p === undefined) ? '' : String(p));
+
     messagePayload = {
       type: 'template',
       template: {
-        id: creds.templateId,
-        params: [caption || originalFilename || 'Account Statement']
+        id: trimmedTplId,
+        params: resolvedParams
+      },
+      attachment: {
+        type: 'file',
+        url: documentUrl,
+        filename: originalFilename || path.basename(filePath)
       }
     };
   } else {
@@ -156,6 +139,43 @@ const sendPdfDocument = async (companyId, recipientPhone, filePath, originalFile
       filename: originalFilename || path.basename(filePath),
       caption: caption || ''
     };
+  }
+
+  const isConfigured = Boolean(
+    creds.apiKey &&
+    creds.apiKey !== 'your_gupshup_api_key_here' &&
+    creds.sourcePhone &&
+    creds.appName
+  );
+
+  const isProduction = process.env.NODE_ENV === 'production';
+  const isSimulationExplicit = process.env.SIMULATION_MODE === 'true';
+
+  if (isProduction && isSimulationExplicit) {
+    throw new Error('Simulation mode is strictly prohibited in production environment.');
+  }
+
+  if (!isConfigured) {
+    // Only allow simulation if explicitly enabled in non-production environments
+    if (!isProduction && isSimulationExplicit) {
+      const mockMessageId = `sim_gup_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      console.log(`[Gupshup SIMULATION] Dispatched simulated PDF to ${destination} for ${originalFilename} (ID: ${mockMessageId})`);
+      return {
+        success: true,
+        isSimulation: true,
+        messageId: mockMessageId,
+        status: 'simulated',
+        provider: 'gupshup-simulated',
+        payload: messagePayload
+      };
+    }
+
+    const missing = [];
+    if (!creds.apiKey || creds.apiKey === 'your_gupshup_api_key_here') missing.push('API Key');
+    if (!creds.sourcePhone) missing.push('Source Phone');
+    if (!creds.appName) missing.push('App Name');
+
+    throw new Error(`Gupshup credentials are missing or incomplete (${missing.join(', ')}). Set valid credentials or configure SIMULATION_MODE in non-production.`);
   }
 
   // Live Gupshup API Dispatch
@@ -197,7 +217,8 @@ const sendPdfDocument = async (companyId, recipientPhone, filePath, originalFile
     success: true,
     messageId,
     status: result.status || 'submitted',
-    raw: result
+    raw: result,
+    payload: messagePayload
   };
 };
 

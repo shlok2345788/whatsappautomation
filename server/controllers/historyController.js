@@ -79,7 +79,7 @@ const retryMessage = async (req, res, next) => {
     // Server-side authorization check: Re-verify PDF file record for this company
     const { data: pdfRow } = await supabase
       .from('pdf_files')
-      .select('filePath')
+      .select('id, filePath')
       .eq('originalFilename', logEntry.pdfFilename)
       .eq('company_id', companyId)
       .maybeSingle();
@@ -100,12 +100,19 @@ const retryMessage = async (req, res, next) => {
     await supabase.from('message_logs').update({ status: 'Sending' }).eq('id', logId);
 
     try {
+      const templateParams = [
+        logEntry.contactName || 'Customer',
+        logEntry.pdfFilename
+      ];
+
       const sendResult = await messagingProvider.sendPdfDocument(
         companyId,
         recipientPhone,
         resolvedPdfPath,
         logEntry.pdfFilename,
-        logEntry.messageText
+        logEntry.messageText,
+        pdfRow?.id || null,
+        templateParams
       );
 
       const isSimulated = Boolean(sendResult?.isSimulation || sendResult?.provider === 'gupshup-simulated' || sendResult?.status === 'simulated');

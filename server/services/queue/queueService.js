@@ -115,6 +115,9 @@ const processSendQueue = async (companyId, rawQueueItems, customMessageTemplate,
     throw new Error('A sending process is already running for this company');
   }
 
+  // Validate template configuration before queue processing
+  await messagingProvider.validateTemplateConfig(companyId);
+
   // Validate and resolve items strictly against server database records
   const queueItems = await validateAndResolveQueueItems(companyId, rawQueueItems);
 
@@ -271,12 +274,19 @@ const processSendQueue = async (companyId, rawQueueItems, customMessageTemplate,
         throw new Error('Document access authorization revoked or file removed before dispatch');
       }
 
+      const templateParams = [
+        item.name,
+        verifiedPdf.originalFilename
+      ];
+
       const sendResult = await messagingProvider.sendPdfDocument(
         companyId,
         item.phone,
         verifiedPdf.filePath,
         verifiedPdf.originalFilename,
-        messageText
+        messageText,
+        verifiedPdf.id,
+        templateParams
       );
       const messageId = sendResult?.messageId || '';
       const isSimulated = Boolean(sendResult?.isSimulation || sendResult?.provider === 'gupshup-simulated' || sendResult?.status === 'simulated');

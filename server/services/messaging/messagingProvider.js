@@ -35,6 +35,20 @@ class MessagingProvider {
   }
 
   /**
+   * Validates template configuration if configured for the company.
+   */
+  async validateTemplateConfig(companyId) {
+    const creds = await gupshupService.getCredentials(companyId);
+    if (typeof creds?.templateId === 'string' && creds.templateId.length > 0) {
+      const trimmed = creds.templateId.trim();
+      if (!trimmed) {
+        throw new Error('Configured WhatsApp templateId is invalid or empty.');
+      }
+    }
+    return creds;
+  }
+
+  /**
    * Checks the connection state and verifies provider credentials.
    * Returns: { status: 'CONNECTED' | 'NOT_CONFIGURED' | 'CONFIG_REQUIRED' | 'ERROR', provider, details, senderPhone }
    */
@@ -132,13 +146,15 @@ class MessagingProvider {
   /**
    * Sends a PDF ledger document through the active messaging provider.
    */
-  async sendPdfDocument(companyId, recipientPhone, filePath, originalFilename, caption = '') {
+  async sendPdfDocument(companyId, recipientPhone, filePath, originalFilename, caption = '', pdfId = null, templateParams = null) {
     return gupshupService.sendPdfDocument(
       companyId,
       recipientPhone,
       filePath,
       originalFilename,
-      caption
+      caption,
+      pdfId,
+      templateParams
     );
   }
 
