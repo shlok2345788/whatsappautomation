@@ -405,7 +405,7 @@ const generateBalanceSheetPdf = async (bsData, outputDir) => {
   fs.writeFileSync(targetFilePath, pdfBuffer);
 
   const stats = fs.statSync(targetFilePath);
-  const hashSum = crypto.createHash('md5');
+  const hashSum = crypto.createHash('sha256');
   hashSum.update(pdfBuffer);
   const fileHash = hashSum.digest('hex');
 

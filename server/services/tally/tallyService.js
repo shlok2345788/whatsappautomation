@@ -409,6 +409,8 @@ const getCustomerLedgers = async (options = {}) => {
 
   // Tally is offline: only provide synthetic data when explicitly permitted for testing or demo sandbox
   const isTestRunner = Boolean(
+    process.env.NODE_TEST_CONTEXT ||
+    process.argv.includes('--test') ||
     process.execArgv.includes('--test') ||
     process.env.NODE_ENV === 'test' ||
     process.env.npm_lifecycle_event === 'test'
@@ -524,6 +526,8 @@ const getBalanceSheetData = async (options = {}) => {
 
   // Tally is offline: only return synthetic fixture when permitted
   const isTestRunner = Boolean(
+    process.env.NODE_TEST_CONTEXT ||
+    process.argv.includes('--test') ||
     process.execArgv.includes('--test') ||
     process.env.NODE_ENV === 'test' ||
     process.env.npm_lifecycle_event === 'test'

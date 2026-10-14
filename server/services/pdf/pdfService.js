@@ -18,7 +18,7 @@ const extractNameFromFilename = (filename) => {
 const calculateFileHash = (filePath) => {
   try {
     const fileBuffer = fs.readFileSync(filePath);
-    const hashSum = crypto.createHash('md5');
+    const hashSum = crypto.createHash('sha256');
     hashSum.update(fileBuffer);
     return hashSum.digest('hex');
   } catch (error) {

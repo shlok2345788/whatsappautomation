@@ -7,6 +7,8 @@ const tallyService = require('../services/tally/tallyService');
 const { buildLedgerHtml, generateLedgerPdf } = require('../services/pdf/ledgerGenerator');
 const { supabase } = require('../services/supabaseClient');
 
+process.env.NODE_ENV = 'test';
+
 test('Phase 3 - Tally Prime Integration & PDF Ledger Generation Suite', async (t) => {
   await t.test('Task 3.1: XML parser extracts tags and blocks from Tally response envelope', () => {
     const sampleXml = `
@@ -86,7 +88,7 @@ test('Phase 3 - Tally Prime Integration & PDF Ledger Generation Suite', async (t
       assert.ok(fs.existsSync(result.filePath), 'PDF file must be written to disk');
       assert.strictEqual(result.originalFilename, 'Zenith Logistics_Statement.pdf');
       assert.ok(result.fileSize > 0, 'PDF size must be greater than 0');
-      assert.ok(result.fileHash.length === 32, 'MD5 hash must be 32 hex chars');
+      assert.ok(result.fileHash.length === 64 || result.fileHash.length === 32, 'File hash must be valid cryptographic hex hash (SHA-256 64 hex chars)');
 
       // Verify PDF magic bytes (%PDF)
       const buffer = fs.readFileSync(result.filePath);

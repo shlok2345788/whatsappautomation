@@ -1,6 +1,17 @@
 const fs = require('fs');
+const crypto = require('crypto');
 const { supabase } = require('../supabaseClient');
 const messagingProvider = require('../messaging/messagingProvider');
+
+const computeFileSha256 = (filePath) => {
+  if (!filePath || !fs.existsSync(filePath)) return '';
+  try {
+    const fileBuffer = fs.readFileSync(filePath);
+    return crypto.createHash('sha256').update(fileBuffer).digest('hex');
+  } catch (e) {
+    return '';
+  }
+};
 
 const activeQueues = {};
 
@@ -59,6 +70,7 @@ const validateAndResolveQueueItems = async (companyId, rawItems) => {
     }
 
     // 3. Assemble validated server-authoritative record
+    const shaHash = computeFileSha256(pdfRow.filePath) || pdfRow.fileHash || '';
     validated.push({
       pdfId: pdfRow.id,
       contactId: contactRow.id,
@@ -66,7 +78,7 @@ const validateAndResolveQueueItems = async (companyId, rawItems) => {
       phone: contactRow.mobile,
       pdfFilename: pdfRow.originalFilename,
       pdfPath: pdfRow.filePath,
-      fileHash: pdfRow.fileHash || '',
+      fileHash: shaHash,
       forceSend: Boolean(item.forceSend)
     });
   }
@@ -183,19 +195,29 @@ const processQueueItems = async (
       }).eq('id', item.queueItemId);
     }
 
-    // Duplicate check
+    // Cryptographic SHA-256 content-hash duplicate detection scoped to company_id and recipient phone
+    const activeFileHash = item.fileHash || computeFileSha256(item.pdfPath);
+
     if (!item.forceSend) {
-      const { data: existingSent } = await supabase
-        .from('message_logs')
-        .select('id')
-        .eq('company_id', companyId)
-        .eq('phone', item.phone)
-        .eq('pdfFilename', item.pdfFilename)
-        .eq('status', 'Sent')
-        .maybeSingle();
+      let existingSent = null;
+
+      if (activeFileHash) {
+        const { data: hashMatch } = await supabase
+          .from('message_logs')
+          .select('id, pdfFilename')
+          .eq('company_id', companyId)
+          .eq('phone', item.phone)
+          .eq('fileHash', activeFileHash)
+          .in('status', ['Sent', 'Simulated'])
+          .maybeSingle();
+
+        if (hashMatch) {
+          existingSent = hashMatch;
+        }
+      }
 
       if (existingSent) {
-        console.log(`[Queue company_${companyId}] Skipping ${item.pdfFilename} to ${item.name} - Already Sent`);
+        console.log(`[Queue company_${companyId}] Skipping ${item.pdfFilename} to ${item.name} - Duplicate Content Detected (matching previously sent ${existingSent.pdfFilename || 'file'})`);
         await supabase.from('message_logs').insert({
           company_id: companyId,
           contactId: item.contactId || null,
@@ -203,10 +225,10 @@ const processQueueItems = async (
           phone: item.phone,
           pdfFilename: item.pdfFilename,
           pdfPath: item.pdfPath || '',
-          fileHash: item.fileHash || '',
+          fileHash: activeFileHash || '',
           messageText: '',
           status: 'Already Sent',
-          errorReason: 'Document already sent previously',
+          errorReason: 'Document with identical cryptographic content hash already sent to this recipient',
           sentAt: nowIso,
           createdAt: nowIso
         });
@@ -214,7 +236,7 @@ const processQueueItems = async (
         if (item.queueItemId) {
           await supabase.from('queue_items').update({
             status: 'skipped',
-            errorReason: 'Document already sent previously',
+            errorReason: 'Document with identical cryptographic content hash already sent to this recipient',
             updatedAt: nowIso
           }).eq('id', item.queueItemId);
         }
@@ -247,7 +269,7 @@ const processQueueItems = async (
       phone: item.phone,
       pdfFilename: item.pdfFilename,
       pdfPath: item.pdfPath || '',
-      fileHash: item.fileHash || '',
+      fileHash: activeFileHash || '',
       messageText,
       status: 'Sending',
       errorReason: '',
@@ -649,5 +671,6 @@ module.exports = {
   resumeBatch,
   cancelQueue,
   getQueueStatus,
-  recoverOrphanedQueues
+  recoverOrphanedQueues,
+  computeFileSha256
 };
