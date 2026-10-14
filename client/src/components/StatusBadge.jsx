@@ -15,6 +15,14 @@ const StatusBadge = ({ status }) => {
           {status === 'CONNECTED' ? 'Connected ✓' : status}
         </span>
       );
+    case 'Simulated':
+    case 'simulated':
+      return (
+        <span className="badge" style={{ color: '#6d28d9', backgroundColor: '#ede9fe', borderColor: '#c4b5fd', fontWeight: 600 }}>
+          <AlertTriangle size={13} />
+          Simulated
+        </span>
+      );
     case 'CONFIG_REQUIRED':
     case 'Setup Required':
     case 'Queued':

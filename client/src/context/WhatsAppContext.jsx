@@ -16,6 +16,7 @@ export const WhatsAppProvider = ({ children }) => {
   const [templateId, setTemplateId] = useState('');
   const [maskedApiKey, setMaskedApiKey] = useState('');
   const [hasApiKey, setHasApiKey] = useState(false);
+  const [isSimulation, setIsSimulation] = useState(false);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -37,6 +38,7 @@ export const WhatsAppProvider = ({ children }) => {
       setTemplateId(data.templateId || '');
       setMaskedApiKey(data.maskedApiKey || '');
       setHasApiKey(Boolean(data.hasApiKey));
+      setIsSimulation(Boolean(data.isSimulation));
     } catch (err) {
       const isAuthError = err.response?.status === 401;
       if (!isAuthError) {
@@ -124,6 +126,7 @@ export const WhatsAppProvider = ({ children }) => {
         templateId,
         maskedApiKey,
         hasApiKey,
+        isSimulation,
         message,
         loading,
         error,

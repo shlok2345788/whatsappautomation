@@ -212,6 +212,8 @@ const initDatabase = () => {
   addColumnSafely('settings', "gupshupTemplateId TEXT DEFAULT ''");
   addColumnSafely('message_logs', "providerMessageId TEXT DEFAULT ''");
   addColumnSafely('message_logs', "deliveryStatus TEXT DEFAULT ''");
+  addColumnSafely('message_logs', "isSimulation INTEGER DEFAULT 0");
+  addColumnSafely('queue_batches', "simulatedCount INTEGER DEFAULT 0");
 
   console.log('[SQLite Database] Multi-company Schema Initialized at:', dbPath);
 };

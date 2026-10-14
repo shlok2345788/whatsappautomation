@@ -161,6 +161,7 @@ const processSendQueue = async (companyId, rawQueueItems, customMessageTemplate,
 
   const total = queueItems.length;
   let sentCount = 0;
+  let simulatedCount = 0;
   let failedCount = 0;
   let skippedCount = 0;
 
@@ -278,17 +279,35 @@ const processSendQueue = async (companyId, rawQueueItems, customMessageTemplate,
         messageText
       );
       const messageId = sendResult?.messageId || '';
+      const isSimulated = Boolean(sendResult?.isSimulation || sendResult?.provider === 'gupshup-simulated' || sendResult?.status === 'simulated');
+
+      const finalStatus = isSimulated ? 'Simulated' : 'Sent';
+      const finalDeliveryStatus = isSimulated ? 'simulated' : 'submitted';
+      const simulationNotice = isSimulated ? 'Dispatched in development simulation mode (not delivered to real carrier)' : '';
 
       await supabase.from('message_logs').update({
-        status: 'Sent',
+        status: finalStatus,
+        deliveryStatus: finalDeliveryStatus,
         providerMessageId: messageId,
         sentAt: new Date().toISOString(),
-        errorReason: ''
+        errorReason: simulationNotice,
+        isSimulation: isSimulated ? 1 : 0
       }).eq('id', logId);
-      sentCount++;
+
+      if (isSimulated) {
+        simulatedCount++;
+      } else {
+        sentCount++;
+      }
 
       if (io) {
-        io.to(roomName).emit('message:sent', { logId, providerMessageId: messageId, contactName: item.name });
+        io.to(roomName).emit('message:sent', {
+          logId,
+          providerMessageId: messageId,
+          contactName: item.name,
+          isSimulation: isSimulated,
+          status: finalStatus
+        });
       }
     } catch (err) {
       console.error(`[Queue company_${companyId}] Failed to send to ${item.name} (${item.phone}): ${err.message}`);
@@ -307,6 +326,7 @@ const processSendQueue = async (companyId, rawQueueItems, customMessageTemplate,
         percentage: Math.round((currentIndex / total) * 100),
         currentContact: item.name,
         sentCount,
+        simulatedCount,
         failedCount,
         skippedCount,
         pendingCount: total - currentIndex
@@ -329,6 +349,7 @@ const processSendQueue = async (companyId, rawQueueItems, customMessageTemplate,
         status: wasCancelled ? 'cancelled' : 'completed',
         processedItems: total,
         sentCount,
+        simulatedCount,
         failedCount,
         skippedCount,
         updatedAt: new Date().toISOString()
@@ -339,6 +360,7 @@ const processSendQueue = async (companyId, rawQueueItems, customMessageTemplate,
   const finalSummary = {
     total,
     sentCount,
+    simulatedCount,
     failedCount,
     skippedCount
   };

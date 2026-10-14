@@ -77,19 +77,40 @@ const sendPdfDocument = async (companyId, recipientPhone, filePath, originalFile
     throw new Error(`PDF document does not exist at path: ${filePath}`);
   }
 
-  const isConfigured = Boolean(creds.apiKey && creds.apiKey !== 'your_gupshup_api_key_here');
+  const isConfigured = Boolean(
+    creds.apiKey &&
+    creds.apiKey !== 'your_gupshup_api_key_here' &&
+    creds.sourcePhone &&
+    creds.appName
+  );
+
+  const isProduction = process.env.NODE_ENV === 'production';
+  const isSimulationExplicit = process.env.SIMULATION_MODE === 'true';
+
+  if (isProduction && isSimulationExplicit) {
+    throw new Error('Simulation mode is strictly prohibited in production environment.');
+  }
 
   if (!isConfigured) {
-    // Development / Sandbox Simulation Mode:
-    // Gupshup credentials are not yet provisioned. Simulate successful submission.
-    const mockMessageId = `mock_gup_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-    console.log(`[Gupshup Dev-Mode] Simulating PDF dispatch to ${destination} for ${originalFilename} (MessageId: ${mockMessageId})`);
-    return {
-      success: true,
-      messageId: mockMessageId,
-      status: 'submitted',
-      provider: 'gupshup-simulated'
-    };
+    // Only allow simulation if explicitly enabled in non-production environments
+    if (!isProduction && isSimulationExplicit) {
+      const mockMessageId = `sim_gup_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      console.log(`[Gupshup SIMULATION] Dispatched simulated PDF to ${destination} for ${originalFilename} (ID: ${mockMessageId})`);
+      return {
+        success: true,
+        isSimulation: true,
+        messageId: mockMessageId,
+        status: 'simulated',
+        provider: 'gupshup-simulated'
+      };
+    }
+
+    const missing = [];
+    if (!creds.apiKey || creds.apiKey === 'your_gupshup_api_key_here') missing.push('API Key');
+    if (!creds.sourcePhone) missing.push('Source Phone');
+    if (!creds.appName) missing.push('App Name');
+
+    throw new Error(`Gupshup credentials are missing or incomplete (${missing.join(', ')}). Set valid credentials or configure SIMULATION_MODE in non-production.`);
   }
 
   // Build document download URL for WhatsApp server

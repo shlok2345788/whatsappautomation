@@ -6,6 +6,9 @@ const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
 
+const { validateEnv } = require('./config/validateEnv');
+validateEnv();
+
 const connectDB = require('./config/db');
 const socketHandler = require('./sockets/socketHandler');
 const { errorHandler, notFound } = require('./middleware/errorMiddleware');

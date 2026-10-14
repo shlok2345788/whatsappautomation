@@ -6,13 +6,30 @@ import { User as UserIcon } from 'lucide-react';
 
 const TopBar = ({ title }) => {
   const { user } = useAuth();
-  const { status } = useWhatsApp();
+  const { status, isSimulation } = useWhatsApp();
 
   return (
     <header className="top-bar">
       <h1 className="page-title">{title}</h1>
 
       <div className="top-bar-right">
+        {isSimulation && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            backgroundColor: '#fef3c7',
+            border: '1px solid #f59e0b',
+            color: '#b45309',
+            padding: '4px 10px',
+            borderRadius: '6px',
+            fontSize: '11px',
+            fontWeight: 700,
+            letterSpacing: '0.5px'
+          }}>
+            ⚠️ SIMULATION MODE (DEV)
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500 }}>WhatsApp API:</span>
           <StatusBadge status={status} />

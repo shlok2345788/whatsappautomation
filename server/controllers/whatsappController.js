@@ -37,7 +37,8 @@ const getStatus = async (req, res, next) => {
       sourcePhone: settings?.gupshupSourcePhone || process.env.GUPSHUP_SOURCE_PHONE || '',
       templateId: settings?.gupshupTemplateId || process.env.GUPSHUP_TEMPLATE_ID || '',
       maskedApiKey,
-      hasApiKey: Boolean(settings?.gupshupApiKey || process.env.GUPSHUP_API_KEY)
+      hasApiKey: Boolean(settings?.gupshupApiKey || process.env.GUPSHUP_API_KEY),
+      isSimulation: process.env.SIMULATION_MODE === 'true' && process.env.NODE_ENV !== 'production'
     });
   } catch (error) {
     next(error);

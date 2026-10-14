@@ -108,19 +108,24 @@ const retryMessage = async (req, res, next) => {
         logEntry.messageText
       );
 
+      const isSimulated = Boolean(sendResult?.isSimulation || sendResult?.provider === 'gupshup-simulated' || sendResult?.status === 'simulated');
+      const finalStatus = isSimulated ? 'Simulated' : 'Sent';
+      const simulationNotice = isSimulated ? 'Dispatched in development simulation mode (not delivered to real carrier)' : '';
+
       const { data: updated } = await supabase
         .from('message_logs')
         .update({
-          status: 'Sent',
+          status: finalStatus,
           providerMessageId: sendResult?.messageId || '',
           sentAt: new Date().toISOString(),
-          errorReason: ''
+          errorReason: simulationNotice,
+          isSimulation: isSimulated ? 1 : 0
         })
         .eq('id', logId)
         .select()
         .single();
 
-      res.json({ message: 'Message retried and sent successfully', log: updated });
+      res.json({ message: isSimulated ? 'Message retried in simulation mode' : 'Message retried and sent successfully', log: updated });
     } catch (err) {
       const { data: updated } = await supabase
         .from('message_logs')
