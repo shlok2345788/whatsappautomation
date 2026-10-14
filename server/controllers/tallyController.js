@@ -1,17 +1,67 @@
 const path = require('path');
+const fs = require('fs');
 const { supabase } = require('../services/supabaseClient');
 const tallyService = require('../services/tally/tallyService');
-const { generateLedgerPdf } = require('../services/pdf/ledgerGenerator');
+const { generateLedgerPdf, buildLedgerHtml } = require('../services/pdf/ledgerGenerator');
+const { generateBalanceSheetPdf, buildBalanceSheetHtml } = require('../services/pdf/balanceSheetGenerator');
+const { computeLedgerStatement } = require('../financial/financialEngine');
 
 /**
  * Checks connection status to Tally Prime XML server.
  */
 const getTallyStatus = async (req, res, next) => {
   try {
-    const status = await tallyService.checkTallyStatus();
+    const tallyUrl = req.query.tallyUrl || process.env.TALLY_API_URL || 'http://localhost:9000';
+    const status = await tallyService.checkTallyStatus(tallyUrl);
     res.json(status);
   } catch (error) {
     next(error);
+  }
+};
+
+/**
+ * Retrieves company profile details from Tally Prime.
+ */
+const getTallyCompanyInfo = async (req, res, next) => {
+  try {
+    const companyName = req.query.companyName;
+    const isDemoMode = req.query.isDemoMode === 'true';
+    const info = await tallyService.getCompanyInfo({
+      companyName,
+      allowSimulation: isDemoMode
+    });
+    res.json(info);
+  } catch (error) {
+    res.status(503).json({ message: error.message });
+  }
+};
+
+/**
+ * Fetches debtor customer ledgers with calculated balances and reconciliation status.
+ */
+const getLedgers = async (req, res, next) => {
+  try {
+    const companyName = req.query.companyName;
+    const statementPeriod = req.query.statementPeriod;
+    const fromDate = req.query.fromDate;
+    const toDate = req.query.toDate;
+    const isDemoMode = req.query.isDemoMode === 'true';
+
+    const ledgers = await tallyService.getCustomerLedgers({
+      companyName,
+      statementPeriod,
+      fromDate,
+      toDate,
+      allowSimulation: isDemoMode,
+      isDemoMode
+    });
+
+    res.json({
+      count: ledgers.length,
+      ledgers
+    });
+  } catch (error) {
+    res.status(503).json({ message: error.message });
   }
 };
 
@@ -21,7 +71,15 @@ const getTallyStatus = async (req, res, next) => {
 const syncTallyContacts = async (req, res, next) => {
   try {
     const companyId = req.companyId;
-    const ledgers = await tallyService.getCustomerLedgers();
+    const isDemoMode = req.body?.isDemoMode === true || req.query?.isDemoMode === 'true';
+    const companyName = req.body?.companyName || req.query?.companyName;
+
+    const ledgers = await tallyService.getCustomerLedgers({
+      companyName,
+      allowSimulation: isDemoMode,
+      isDemoMode,
+      includeTransactions: false
+    });
 
     let addedCount = 0;
     let updatedCount = 0;
@@ -30,7 +88,6 @@ const syncTallyContacts = async (req, res, next) => {
     for (const ledger of ledgers) {
       if (!ledger.name || !ledger.mobile) continue;
 
-      // Check if contact already exists by mobile
       const { data: existing } = await supabase
         .from('contacts')
         .select('id, name')
@@ -51,7 +108,7 @@ const syncTallyContacts = async (req, res, next) => {
           mobile: ledger.mobile,
           originalMobile: ledger.mobile,
           isValid: 1,
-          statusMessage: 'Synced from Tally Prime',
+          statusMessage: isDemoMode ? 'Synced from Tally (Sandbox)' : 'Synced from Live Tally Prime',
           createdAt: nowIso
         });
         addedCount++;
@@ -71,7 +128,7 @@ const syncTallyContacts = async (req, res, next) => {
       totalContacts: (allContacts || []).length
     });
   } catch (error) {
-    next(error);
+    res.status(503).json({ message: error.message });
   }
 };
 
@@ -81,9 +138,34 @@ const syncTallyContacts = async (req, res, next) => {
 const generateLedgerStatements = async (req, res, next) => {
   try {
     const companyId = req.companyId;
-    const { clearPrevious } = req.body;
+    const {
+      clearPrevious,
+      companyName,
+      statementPeriod,
+      fromDate,
+      toDate,
+      partyNames,
+      isDemoMode
+    } = req.body;
 
-    const ledgers = await tallyService.getCustomerLedgers();
+    const ledgers = await tallyService.getCustomerLedgers({
+      companyName,
+      statementPeriod,
+      fromDate,
+      toDate,
+      allowSimulation: Boolean(isDemoMode),
+      isDemoMode: Boolean(isDemoMode)
+    });
+
+    // Filter by specific parties if provided
+    const targetLedgers = Array.isArray(partyNames) && partyNames.length > 0
+      ? ledgers.filter((l) => partyNames.includes(l.name))
+      : ledgers;
+
+    if (targetLedgers.length === 0) {
+      return res.status(404).json({ message: 'No customer ledgers found matching criteria' });
+    }
+
     const uploadsDir = path.resolve(
       process.env.UPLOADS_DIR || path.join(__dirname, '../../uploads'),
       'pdfs',
@@ -106,16 +188,26 @@ const generateLedgerStatements = async (req, res, next) => {
     const generatedPdfs = [];
     const createdAt = new Date().toISOString();
 
-    for (const ledger of ledgers) {
+    for (const ledger of targetLedgers) {
       const generated = await generateLedgerPdf(
         {
-          companyName: req.user?.company_name || 'Accounts Department',
+          companyName: companyName || req.user?.company_name || 'Accounts Department',
           customerName: ledger.name,
-          mobile: ledger.mobile,
-          statementPeriod: ledger.statementPeriod || 'Current FY 2025-26',
+          customerMobile: ledger.mobile,
+          customerEmail: ledger.email,
+          customerAddress: ledger.address,
+          customerGstin: ledger.gstin,
+          statementPeriod: statementPeriod || ledger.statementPeriod || 'Current Financial Year',
+          openingBalance: ledger.openingBalance,
+          openingBalanceType: ledger.openingBalanceType,
           closingBalance: ledger.closingBalance,
           balanceType: ledger.balanceType,
-          transactions: ledger.transactions || []
+          totalDebits: ledger.totalDebits,
+          totalCredits: ledger.totalCredits,
+          transactions: ledger.transactions || [],
+          isReconciled: ledger.isReconciled,
+          discrepancyAmount: ledger.discrepancyAmount,
+          source: ledger.source || (isDemoMode ? 'DEMO / SYNTHETIC - NOT LIVE' : 'tally-live')
         },
         uploadsDir
       );
@@ -145,17 +237,163 @@ const generateLedgerStatements = async (req, res, next) => {
     }
 
     res.status(201).json({
-      message: `Generated ${generatedPdfs.length} customer ledger statements from Tally`,
+      message: `Generated ${generatedPdfs.length} customer ledger statement(s) from Tally`,
       count: generatedPdfs.length,
       pdfs: generatedPdfs
     });
   } catch (error) {
-    next(error);
+    res.status(503).json({ message: error.message });
+  }
+};
+
+/**
+ * On-demand preview endpoint: returns HTML and computed statement data for instant preview.
+ */
+const previewLedger = async (req, res, next) => {
+  try {
+    const {
+      ledgerName,
+      companyName,
+      statementPeriod,
+      fromDate,
+      toDate,
+      isDemoMode
+    } = req.body;
+
+    if (!ledgerName) {
+      return res.status(400).json({ message: 'Ledger name is required' });
+    }
+
+    const ledgers = await tallyService.getCustomerLedgers({
+      companyName,
+      statementPeriod,
+      fromDate,
+      toDate,
+      allowSimulation: Boolean(isDemoMode),
+      isDemoMode: Boolean(isDemoMode)
+    });
+
+    const targetLedger = ledgers.find((l) => l.name.toLowerCase() === ledgerName.toLowerCase()) || ledgers[0];
+    if (!targetLedger) {
+      return res.status(404).json({ message: `Ledger '${ledgerName}' not found` });
+    }
+
+    const html = buildLedgerHtml({
+      companyName: companyName || req.user?.company_name || 'Accounts Department',
+      customerName: targetLedger.name,
+      customerMobile: targetLedger.mobile,
+      customerEmail: targetLedger.email,
+      customerAddress: targetLedger.address,
+      statementPeriod: statementPeriod || targetLedger.statementPeriod,
+      openingBalance: targetLedger.openingBalance,
+      openingBalanceType: targetLedger.openingBalanceType,
+      closingBalance: targetLedger.closingBalance,
+      balanceType: targetLedger.balanceType,
+      totalDebits: targetLedger.totalDebits,
+      totalCredits: targetLedger.totalCredits,
+      transactions: targetLedger.transactions || [],
+      isReconciled: targetLedger.isReconciled,
+      discrepancyAmount: targetLedger.discrepancyAmount,
+      source: targetLedger.source
+    });
+
+    res.json({
+      ledger: targetLedger,
+      htmlPreview: html
+    });
+  } catch (error) {
+    res.status(503).json({ message: error.message });
+  }
+};
+
+/**
+ * Balance Sheet API: computes and returns structured Balance Sheet data.
+ */
+const getBalanceSheet = async (req, res, next) => {
+  try {
+    const companyName = req.query.companyName;
+    const asOfDate = req.query.asOfDate;
+    const financialYear = req.query.financialYear;
+    const isDemoMode = req.query.isDemoMode === 'true';
+
+    const bsData = await tallyService.getBalanceSheetData({
+      companyName,
+      asOfDate,
+      financialYear,
+      allowSimulation: isDemoMode,
+      isDemoMode
+    });
+
+    res.json(bsData);
+  } catch (error) {
+    res.status(503).json({ message: error.message });
+  }
+};
+
+/**
+ * Generates Balance Sheet PDF document and registers it in pdf_files for dispatch/download.
+ */
+const generateBalanceSheetPdfReport = async (req, res, next) => {
+  try {
+    const companyId = req.companyId;
+    const {
+      companyName,
+      asOfDate,
+      financialYear,
+      isDemoMode
+    } = req.body;
+
+    const bsData = await tallyService.getBalanceSheetData({
+      companyName,
+      asOfDate,
+      financialYear,
+      allowSimulation: Boolean(isDemoMode),
+      isDemoMode: Boolean(isDemoMode)
+    });
+
+    const uploadsDir = path.resolve(
+      process.env.UPLOADS_DIR || path.join(__dirname, '../../uploads'),
+      'pdfs',
+      `tenant_${String(companyId).replace(/[^a-zA-Z0-9_-]/g, '_')}`
+    );
+
+    const generated = await generateBalanceSheetPdf(bsData, uploadsDir);
+    const createdAt = new Date().toISOString();
+
+    const { data: insertedRecord, error: insertErr } = await supabase
+      .from('pdf_files')
+      .insert({
+        company_id: companyId,
+        originalFilename: generated.originalFilename,
+        extractedName: generated.extractedName,
+        filePath: generated.filePath,
+        fileSize: generated.fileSize,
+        fileHash: generated.fileHash,
+        matchedContactId: null,
+        createdAt
+      })
+      .select()
+      .single();
+
+    if (insertErr) throw insertErr;
+
+    res.status(201).json({
+      message: `Balance Sheet PDF generated successfully (${bsData.isReconciled ? 'Reconciled & Verified' : 'Warning: Unreconciled'})`,
+      pdf: insertedRecord,
+      balanceSheet: bsData
+    });
+  } catch (error) {
+    res.status(503).json({ message: error.message });
   }
 };
 
 module.exports = {
   getTallyStatus,
+  getTallyCompanyInfo,
+  getLedgers,
   syncTallyContacts,
-  generateLedgerStatements
+  generateLedgerStatements,
+  previewLedger,
+  getBalanceSheet,
+  generateBalanceSheetPdfReport
 };
