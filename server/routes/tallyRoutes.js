@@ -8,7 +8,11 @@ const {
   generateLedgerStatements,
   previewLedger,
   getBalanceSheet,
-  generateBalanceSheetPdfReport
+  generateBalanceSheetPdfReport,
+  uploadConnectorData,
+  generateConnectorKey,
+  revokeConnectorKey,
+  getConnectorStatus
 } = require('../controllers/tallyController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -20,5 +24,11 @@ router.post('/generate-ledgers', protect, generateLedgerStatements);
 router.post('/preview-ledger', protect, previewLedger);
 router.get('/balance-sheet', protect, getBalanceSheet);
 router.post('/generate-balance-sheet', protect, generateBalanceSheetPdfReport);
+
+// Local Windows Connector Endpoints
+router.post('/connector-upload', uploadConnectorData);
+router.post('/connector-key', protect, generateConnectorKey);
+router.post('/connector-key/revoke', protect, revokeConnectorKey);
+router.get('/connector-status', protect, getConnectorStatus);
 
 module.exports = router;

@@ -54,7 +54,15 @@ const formatTallyDate = (rawDate) => {
  */
 const sendTallyRequest = async (tallyUrl, xmlPayload, timeoutMs = 4000) => {
   return new Promise((resolve, reject) => {
-    const parsedUrl = url.parse(tallyUrl || process.env.TALLY_API_URL || 'http://localhost:9000');
+    const targetUrl = tallyUrl || process.env.TALLY_API_URL || 'http://localhost:9000';
+    const parsedUrl = url.parse(targetUrl);
+    const hostname = (parsedUrl.hostname || '').toLowerCase();
+
+    // SSRF Prevention: Reject any non-loopback host or cloud metadata address
+    const isLoopback = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+    if (!isLoopback) {
+      return reject(new Error(`SSRF Blocked: Outbound requests to remote host '${hostname}' are strictly prohibited.`));
+    }
     const options = {
       hostname: parsedUrl.hostname || 'localhost',
       port: parsedUrl.port || 9000,

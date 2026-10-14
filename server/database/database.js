@@ -194,6 +194,54 @@ const initDatabase = () => {
     );
 
     CREATE INDEX IF NOT EXISTS idx_queue_batches_company ON queue_batches(company_id, status);
+
+    CREATE TABLE IF NOT EXISTS connector_credentials (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id TEXT NOT NULL,
+      apiKeyHash TEXT NOT NULL,
+      name TEXT DEFAULT 'Windows Connector',
+      isRevoked INTEGER DEFAULT 0,
+      createdAt TEXT NOT NULL,
+      lastUsedAt TEXT DEFAULT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_connector_keys ON connector_credentials(apiKeyHash, isRevoked);
+
+    CREATE TABLE IF NOT EXISTS tally_ledger_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id TEXT NOT NULL,
+      companyName TEXT NOT NULL,
+      statementPeriod TEXT DEFAULT '',
+      fromDate TEXT DEFAULT '',
+      toDate TEXT DEFAULT '',
+      totalLedgers INTEGER DEFAULT 0,
+      reconciledCount INTEGER DEFAULT 0,
+      discrepancyCount INTEGER DEFAULT 0,
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ledger_runs ON tally_ledger_runs(company_id, createdAt);
+
+    CREATE TABLE IF NOT EXISTS tally_ledgers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id TEXT NOT NULL,
+      run_id INTEGER DEFAULT NULL,
+      name TEXT NOT NULL,
+      mobile TEXT DEFAULT '',
+      email TEXT DEFAULT '',
+      address TEXT DEFAULT '',
+      gstin TEXT DEFAULT '',
+      openingBalance REAL DEFAULT 0,
+      openingBalanceType TEXT DEFAULT 'Dr',
+      closingBalance REAL DEFAULT 0,
+      balanceType TEXT DEFAULT 'Dr',
+      totalDebits REAL DEFAULT 0,
+      totalCredits REAL DEFAULT 0,
+      isReconciled INTEGER DEFAULT 1,
+      discrepancyAmount REAL DEFAULT 0,
+      transactionsJson TEXT DEFAULT '[]',
+      statementPeriod TEXT DEFAULT '',
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_tally_ledgers_company ON tally_ledgers(company_id, run_id);
   `);
 
   // Run incremental column additions safely if tables existed
