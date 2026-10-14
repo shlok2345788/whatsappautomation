@@ -1,5 +1,5 @@
 const { verifyToken } = require('../middleware/authMiddleware');
-const whatsappService = require('../services/whatsapp/whatsappService');
+const messagingProvider = require('../services/messaging/messagingProvider');
 
 const socketHandler = (io) => {
   // Enforce socket authentication middleware
@@ -28,13 +28,16 @@ const socketHandler = (io) => {
     const authenticatedUserId = socket.user?.id;
     console.log(`[Socket.IO] Authenticated client connected: ${socket.id} (user: ${authenticatedUserId})`);
 
-    // Auto-join authenticated tenant room
+    // Auto-join authenticated tenant room and emit current provider status
     if (authenticatedUserId) {
       const userRoom = `user_${authenticatedUserId}`;
       socket.join(userRoom);
+      messagingProvider.checkConnection(authenticatedUserId)
+        .then((status) => socket.emit('whatsapp:provider_status', status))
+        .catch((err) => console.warn('[Socket.IO] Status check notice on connect:', err.message));
     }
 
-    socket.on('join', (requestedUserId) => {
+    socket.on('join', async (requestedUserId) => {
       // Security check: Client can only join their own user/company room
       if (requestedUserId && String(requestedUserId) !== String(authenticatedUserId)) {
         console.warn(`[Socket.IO Security Alert] Socket ${socket.id} (user ${authenticatedUserId}) attempted unauthorized join to user_${requestedUserId}`);
@@ -45,16 +48,13 @@ const socketHandler = (io) => {
       const userId = authenticatedUserId;
       const roomName = `user_${userId}`;
       socket.join(roomName);
-      console.log(`[Socket.IO] Socket ${socket.id} verified and joined room ${roomName}`);
 
-      // Replay state
-      const status = whatsappService.getClientStatus(userId);
-      const qrCode = whatsappService.getQrCode(userId);
-      const error = whatsappService.getClientError(userId);
-      console.log(`[Socket.IO] State replay for ${roomName}: status=${status}, qrAvailable=${!!qrCode}`);
-      socket.emit('whatsapp:status', { status, error });
-      if (qrCode) {
-        socket.emit('whatsapp:qr', { qrCode, status: 'WAITING_QR' });
+      // Replay provider connection status
+      try {
+        const providerStatus = await messagingProvider.checkConnection(userId);
+        socket.emit('whatsapp:provider_status', providerStatus);
+      } catch (err) {
+        console.warn('[Socket.IO] Could not replay provider status:', err.message);
       }
     });
 

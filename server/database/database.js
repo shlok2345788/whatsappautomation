@@ -173,6 +173,7 @@ const initDatabase = () => {
       gupshupAppName TEXT DEFAULT '',
       gupshupApiKey TEXT DEFAULT '',
       gupshupSourcePhone TEXT DEFAULT '',
+      gupshupTemplateId TEXT DEFAULT '',
       delayBetweenMessages INTEGER DEFAULT 4,
       messageTemplate TEXT DEFAULT 'Hello {{name}},\n\nPlease find your document attached.\n\nThank you.',
       autoRetryFailed INTEGER DEFAULT 0,
@@ -208,6 +209,7 @@ const initDatabase = () => {
   addColumnSafely('settings', "gupshupAppName TEXT DEFAULT ''");
   addColumnSafely('settings', "gupshupApiKey TEXT DEFAULT ''");
   addColumnSafely('settings', "gupshupSourcePhone TEXT DEFAULT ''");
+  addColumnSafely('settings', "gupshupTemplateId TEXT DEFAULT ''");
   addColumnSafely('message_logs', "providerMessageId TEXT DEFAULT ''");
   addColumnSafely('message_logs', "deliveryStatus TEXT DEFAULT ''");
 

@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
-  QrCode,
+  MessageSquare,
   FileSpreadsheet,
   FileText,
   GitCompare,
@@ -10,26 +10,22 @@ import {
   History as HistoryIcon,
   Settings as SettingsIcon,
   LogOut,
-  MessageSquare,
   Database
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useWhatsApp } from '../context/WhatsAppContext';
 
 const Sidebar = () => {
   const { logout } = useAuth();
-  const { disconnect } = useWhatsApp();
   const navigate = useNavigate();
 
-  const handleLogout = async () => {
-    await disconnect(false);
+  const handleLogout = () => {
     logout();
     navigate('/signin');
   };
 
   const navItems = [
     { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-    { label: 'WhatsApp', path: '/dashboard/whatsapp', icon: QrCode },
+    { label: 'WhatsApp API', path: '/dashboard/whatsapp', icon: MessageSquare },
     { label: 'Tally Prime', path: '/dashboard/tally', icon: Database },
     { label: 'Excel Contacts', path: '/dashboard/contacts', icon: FileSpreadsheet },
     { label: 'PDF Files', path: '/dashboard/pdfs', icon: FileText },

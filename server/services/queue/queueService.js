@@ -1,6 +1,5 @@
 const { supabase } = require('../supabaseClient');
-const whatsappService = require('../whatsapp/whatsappService');
-const gupshupService = require('../whatsapp/gupshupService');
+const messagingProvider = require('../messaging/messagingProvider');
 
 const activeQueues = {};
 
@@ -185,32 +184,14 @@ const processSendQueue = async (companyId, queueItems, customMessageTemplate, io
     }
 
     try {
-      const provider = settingsRow?.provider || 'gupshup';
-      let messageId = '';
-
-      if (provider === 'gupshup') {
-        const sendResult = await gupshupService.sendPdfDocument(
-          companyId,
-          item.phone,
-          item.pdfPath,
-          item.pdfFilename,
-          messageText
-        );
-        messageId = sendResult.messageId || '';
-      } else {
-        const status = whatsappService.getClientStatus(companyId);
-        if (status !== 'CONNECTED') {
-          throw new Error('WhatsApp connection lost during sending process');
-        }
-
-        await whatsappService.sendPdfDocument(
-          companyId,
-          item.phone,
-          item.pdfPath,
-          item.pdfFilename,
-          messageText
-        );
-      }
+      const sendResult = await messagingProvider.sendPdfDocument(
+        companyId,
+        item.phone,
+        item.pdfPath,
+        item.pdfFilename,
+        messageText
+      );
+      const messageId = sendResult?.messageId || '';
 
       await supabase.from('message_logs').update({
         status: 'Sent',

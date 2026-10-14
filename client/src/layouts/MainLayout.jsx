@@ -5,7 +5,7 @@ import TopBar from '../components/TopBar';
 
 const pageTitles = {
   '/dashboard': 'Dashboard',
-  '/dashboard/whatsapp': 'WhatsApp Connection',
+  '/dashboard/whatsapp': 'WhatsApp Business API',
   '/dashboard/contacts': 'Excel Contacts',
   '/dashboard/pdfs': 'PDF Files',
   '/dashboard/matching': 'Document Matching',

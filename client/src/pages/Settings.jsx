@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import API from '../services/api';
 import { useWhatsApp } from '../context/WhatsAppContext';
 import { useAuth } from '../context/AuthContext';
 import StatusBadge from '../components/StatusBadge';
-import { QrCode, Save, Lock, User, Clock, MessageSquare, Power } from 'lucide-react';
+import { Save, Lock, User, Clock, MessageSquare, ExternalLink } from 'lucide-react';
 
 const Settings = () => {
-  const { status: wsStatus, connect, disconnect } = useWhatsApp();
+  const { status: wsStatus } = useWhatsApp();
   const { user, updateUserProfile } = useAuth();
 
   // Sending settings state
@@ -100,79 +101,68 @@ const Settings = () => {
       <div className="card">
         <div className="card-header">
           <h3 className="card-title">WhatsApp Provider Configuration</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Status:</span>
+            <StatusBadge status={wsStatus} />
+          </div>
         </div>
+
         <div className="form-group">
           <label className="form-label">Delivery Provider</label>
           <select
             className="form-select"
             value={provider}
             onChange={(e) => setProvider(e.target.value)}
-            style={{ maxWidth: '300px' }}
+            style={{ maxWidth: '360px' }}
           >
-            <option value="gupshup">Official WhatsApp Business API (Gupshup)</option>
-            <option value="whatsapp-web">WhatsApp Web (Browser Session)</option>
+            <option value="gupshup">Official WhatsApp Business API (Gupshup WABA)</option>
           </select>
           <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-            Recommended: Official Gupshup WABA for high deliverability, automated webhooks, and multi-tenant reliability.
+            Enterprise Cloud API with high throughput, delivery receipts, and full multi-tenant isolation.
           </span>
         </div>
 
-        {provider === 'gupshup' ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">Gupshup App Name</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="e.g. MyEnterpriseApp"
-                value={gupshupAppName}
-                onChange={(e) => setGupshupAppName(e.target.value)}
-              />
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">Gupshup API Key</label>
-              <input
-                type="password"
-                className="form-input"
-                placeholder="Enter your Gupshup API Key"
-                value={gupshupApiKey}
-                onChange={(e) => setGupshupApiKey(e.target.value)}
-              />
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                Leave empty to fallback to system environment variable credentials.
-              </span>
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">Sender Phone Number (with Country Code)</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="e.g. 919876543210"
-                value={gupshupSourcePhone}
-                onChange={(e) => setGupshupSourcePhone(e.target.value)}
-              />
-            </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">Gupshup App Name</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="e.g. MyEnterpriseApp"
+              value={gupshupAppName}
+              onChange={(e) => setGupshupAppName(e.target.value)}
+            />
           </div>
-        ) : (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
-            <div>
-              <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '4px' }}>Web Session Status</div>
-              <StatusBadge status={wsStatus} />
-            </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">Gupshup API Key</label>
+            <input
+              type="password"
+              className="form-input"
+              placeholder="Enter your Gupshup API Key"
+              value={gupshupApiKey}
+              onChange={(e) => setGupshupApiKey(e.target.value)}
+            />
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+              Leave empty to keep existing encrypted credentials.
+            </span>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">Sender Phone Number (with Country Code)</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="e.g. 919876543210"
+              value={gupshupSourcePhone}
+              onChange={(e) => setGupshupSourcePhone(e.target.value)}
+            />
+          </div>
 
-            <div style={{ display: 'flex', gap: '8px' }}>
-              {wsStatus !== 'CONNECTED' ? (
-                <button onClick={connect} className="btn btn-primary btn-sm">
-                  <QrCode size={14} /> Connect WhatsApp
-                </button>
-              ) : (
-                <button onClick={() => disconnect(true)} className="btn btn-danger btn-sm">
-                  <Power size={14} /> Logout Session
-                </button>
-              )}
-            </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '8px' }}>
+            <Link to="/dashboard/whatsapp" className="btn btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <ExternalLink size={14} /> Open Full WhatsApp API Dashboard & Test Dispatch
+            </Link>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Sending Configuration */}

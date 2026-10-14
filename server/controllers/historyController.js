@@ -1,5 +1,5 @@
 const { supabase } = require('../services/supabaseClient');
-const whatsappService = require('../services/whatsapp/whatsappService');
+const messagingProvider = require('../services/messaging/messagingProvider');
 
 const getHistory = async (req, res, next) => {
   try {
@@ -50,15 +50,17 @@ const retryMessage = async (req, res, next) => {
       return res.status(404).json({ message: 'Message log not found' });
     }
 
-    const wsStatus = whatsappService.getClientStatus(companyId);
-    if (wsStatus !== 'CONNECTED') {
-      return res.status(400).json({ message: 'WhatsApp is not connected for this company. Please connect WhatsApp first.' });
+    const connection = await messagingProvider.checkConnection(companyId);
+    if (connection.status !== 'CONNECTED') {
+      return res.status(400).json({
+        message: `WhatsApp Business API is not ready (${connection.message}). Please verify configuration.`
+      });
     }
 
     await supabase.from('message_logs').update({ status: 'Sending' }).eq('id', logId);
 
     try {
-      await whatsappService.sendPdfDocument(
+      const sendResult = await messagingProvider.sendPdfDocument(
         companyId,
         logEntry.phone,
         logEntry.pdfPath,
@@ -68,7 +70,12 @@ const retryMessage = async (req, res, next) => {
 
       const { data: updated } = await supabase
         .from('message_logs')
-        .update({ status: 'Sent', sentAt: new Date().toISOString(), errorReason: '' })
+        .update({
+          status: 'Sent',
+          providerMessageId: sendResult?.messageId || '',
+          sentAt: new Date().toISOString(),
+          errorReason: ''
+        })
         .eq('id', logId)
         .select()
         .single();

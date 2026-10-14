@@ -1,11 +1,13 @@
 import React from 'react';
-import { CheckCircle2, Clock, AlertTriangle, XCircle, Wifi, WifiOff } from 'lucide-react';
+import { CheckCircle2, Clock, AlertTriangle, XCircle, ShieldAlert, ShieldCheck } from 'lucide-react';
 
 const StatusBadge = ({ status }) => {
   switch (status) {
     case 'CONNECTED':
     case 'Connected':
     case 'Sent':
+    case 'Delivered':
+    case 'Read':
     case 'Valid':
       return (
         <span className="badge badge-success">
@@ -13,10 +15,8 @@ const StatusBadge = ({ status }) => {
           {status === 'CONNECTED' ? 'Connected ✓' : status}
         </span>
       );
-    case 'WAITING_QR':
-    case 'Waiting for QR scan':
-    case 'CONNECTING':
-    case 'Connecting':
+    case 'CONFIG_REQUIRED':
+    case 'Setup Required':
     case 'Queued':
     case 'Sending':
     case 'Pending':
@@ -24,19 +24,27 @@ const StatusBadge = ({ status }) => {
       return (
         <span className="badge badge-warning">
           <Clock size={13} />
-          {status === 'WAITING_QR' ? 'Waiting for QR scan' : status}
+          {status === 'CONFIG_REQUIRED' ? 'Setup Required' : status}
+        </span>
+      );
+    case 'NOT_CONFIGURED':
+    case 'Not Configured':
+      return (
+        <span className="badge badge-warning" style={{ color: '#b45309', backgroundColor: '#fef3c7', borderColor: '#fde68a' }}>
+          <ShieldAlert size={13} />
+          Not Configured
         </span>
       );
     case 'DISCONNECTED':
     case 'Disconnected':
     case 'Failed':
     case 'Invalid':
-    case 'LOGGED_OUT':
-    case 'Logged out':
+    case 'ERROR':
+    case 'Error':
       return (
         <span className="badge badge-danger">
           <XCircle size={13} />
-          {status === 'DISCONNECTED' ? 'Disconnected' : status === 'LOGGED_OUT' ? 'Logged out' : status}
+          {status === 'ERROR' ? 'Config Error' : status === 'DISCONNECTED' ? 'Disconnected' : status}
         </span>
       );
     case 'Already Sent':
@@ -48,7 +56,7 @@ const StatusBadge = ({ status }) => {
         </span>
       );
     default:
-      return <span className="badge badge-neutral">{status}</span>;
+      return <span className="badge badge-neutral">{status || 'Unknown'}</span>;
   }
 };
 

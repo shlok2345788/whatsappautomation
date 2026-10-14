@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import API from '../services/api';
 import { useWhatsApp } from '../context/WhatsAppContext';
 import StatusBadge from '../components/StatusBadge';
-import { Users, FileText, Send, AlertCircle, QrCode, ArrowRight } from 'lucide-react';
+import { Users, FileText, Send, AlertCircle, MessageSquare, Settings, ArrowRight } from 'lucide-react';
 
 const Dashboard = () => {
   const { status } = useWhatsApp();
@@ -55,18 +55,22 @@ const Dashboard = () => {
 
   return (
     <div>
-      {/* WhatsApp Status Alert Banner if disconnected */}
+      {/* WhatsApp Status Alert Banner if not configured or connected */}
       {status !== 'CONNECTED' && (
-        <div className="card" style={{ backgroundColor: '#fffbeb', borderColor: '#fde68a', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px' }}>
+        <div className="card" style={{ backgroundColor: '#fffbeb', borderColor: '#fde68a', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', marginBottom: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <AlertCircle size={20} style={{ color: '#d97706' }} />
             <div>
-              <div style={{ fontWeight: 600, color: '#92400e' }}>WhatsApp is not connected</div>
-              <div style={{ fontSize: '13px', color: '#b45309' }}>Connect your WhatsApp account by scanning QR code to start sending PDFs.</div>
+              <div style={{ fontWeight: 600, color: '#92400e' }}>
+                {status === 'NOT_CONFIGURED' ? 'WhatsApp Business API Not Configured' : 'WhatsApp API Setup Required'}
+              </div>
+              <div style={{ fontSize: '13px', color: '#b45309' }}>
+                Configure your Gupshup WhatsApp Business API credentials to start sending PDF invoices and statements.
+              </div>
             </div>
           </div>
-          <Link to="/dashboard/whatsapp" className="btn btn-primary btn-sm">
-            <QrCode size={14} /> Connect WhatsApp
+          <Link to="/dashboard/whatsapp" className="btn btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Settings size={14} /> Configure WhatsApp API
           </Link>
         </div>
       )}
@@ -74,11 +78,11 @@ const Dashboard = () => {
       {/* Stats Cards */}
       <div className="grid-4">
         <div className="stat-card">
-          <div className="stat-icon" style={{ backgroundColor: status === 'CONNECTED' ? '#f0fdf4' : '#fee2e2', color: status === 'CONNECTED' ? '#16a34a' : '#dc2626' }}>
-            <QrCode size={20} />
+          <div className="stat-icon" style={{ backgroundColor: status === 'CONNECTED' ? '#f0fdf4' : '#fef3c7', color: status === 'CONNECTED' ? '#16a34a' : '#d97706' }}>
+            <MessageSquare size={20} />
           </div>
           <div className="stat-info">
-            <span className="stat-label">WhatsApp</span>
+            <span className="stat-label">WhatsApp API</span>
             <div style={{ marginTop: '2px' }}>
               <StatusBadge status={status} />
             </div>

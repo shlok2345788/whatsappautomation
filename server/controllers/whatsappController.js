@@ -1,58 +1,133 @@
-const whatsappService = require('../services/whatsapp/whatsappService');
+const { supabase } = require('../services/supabaseClient');
+const messagingProvider = require('../services/messaging/messagingProvider');
+const gupshupService = require('../services/whatsapp/gupshupService');
 
+/**
+ * Retrieves the current WhatsApp Business API configuration and connection status.
+ */
 const getStatus = async (req, res, next) => {
   try {
-    const companyId = req.companyId || req.user.id;
-    const status = whatsappService.getClientStatus(companyId);
-    const qrCode = whatsappService.getQrCode(companyId);
-    const error = whatsappService.getClientError(companyId);
+    const companyId = req.companyId;
+    const connection = await messagingProvider.checkConnection(companyId);
+
+    // Fetch existing settings to provide masked credentials
+    const { data: settings } = await supabase
+      .from('settings')
+      .select('gupshupAppName, gupshupApiKey, gupshupSourcePhone, gupshupTemplateId, provider')
+      .eq('company_id', companyId)
+      .maybeSingle();
+
+    const maskedApiKey = settings?.gupshupApiKey
+      ? '••••••••' + settings.gupshupApiKey.slice(-4)
+      : (process.env.GUPSHUP_API_KEY ? '••••••••' + process.env.GUPSHUP_API_KEY.slice(-4) : '');
+
     res.json({
-      status,
-      qrCode,
-      error,
-      isConnected: status === 'CONNECTED'
+      status: connection.status, // 'CONNECTED' | 'NOT_CONFIGURED' | 'CONFIG_REQUIRED' | 'ERROR'
+      provider: connection.provider || 'gupshup',
+      message: connection.message,
+      appName: settings?.gupshupAppName || process.env.GUPSHUP_APP_NAME || '',
+      sourcePhone: settings?.gupshupSourcePhone || process.env.GUPSHUP_SOURCE_PHONE || '',
+      templateId: settings?.gupshupTemplateId || process.env.GUPSHUP_TEMPLATE_ID || '',
+      maskedApiKey,
+      hasApiKey: Boolean(settings?.gupshupApiKey || process.env.GUPSHUP_API_KEY)
     });
   } catch (error) {
     next(error);
   }
 };
 
-const getQrCode = async (req, res, next) => {
+/**
+ * Saves WhatsApp Business API (Gupshup) configuration securely.
+ * Masked values are preserved without leaking plaintext secrets.
+ */
+const saveConfiguration = async (req, res, next) => {
   try {
-    const companyId = req.companyId || req.user.id;
-    const qrCode = whatsappService.getQrCode(companyId);
-    const status = whatsappService.getClientStatus(companyId);
-    res.json({ qrCode, status });
-  } catch (error) {
-    next(error);
-  }
-};
+    const companyId = req.companyId;
+    const { appName, apiKey, sourcePhone, templateId } = req.body;
 
-const connectWhatsApp = async (req, res, next) => {
-  try {
-    const companyId = req.companyId || req.user.id;
-    const { cleanSession } = req.body || {};
+    const updates = {
+      provider: 'gupshup',
+      updatedAt: new Date().toISOString()
+    };
+
+    if (appName !== undefined) updates.gupshupAppName = appName.trim();
+    if (sourcePhone !== undefined) updates.gupshupSourcePhone = sourcePhone.trim();
+    if (templateId !== undefined) updates.gupshupTemplateId = templateId.trim();
+
+    // Only update API key if user supplied a new value (not masked dots)
+    if (apiKey && !apiKey.includes('••••')) {
+      updates.gupshupApiKey = apiKey.trim();
+    }
+
+    const { data: updated, error } = await supabase
+      .from('settings')
+      .upsert({ company_id: companyId, ...updates }, { onConflict: 'company_id' })
+      .select('gupshupAppName, gupshupSourcePhone, gupshupTemplateId, provider, updatedAt')
+      .single();
+
+    if (error) throw error;
+
+    // Verify newly saved configuration
+    const check = await messagingProvider.checkConnection(companyId);
+
+    // Emit live status update to user socket room
     const io = req.app.get('io');
-    const initialization = whatsappService.initUserClient(companyId, io, cleanSession);
-    initialization.catch((error) => {
-      console.error(`[WhatsApp company_${companyId}] Background initialization failed:`, error.message);
-    });
+    if (io) {
+      io.to(`user_${companyId}`).emit('whatsapp:provider_status', check);
+    }
+
     res.json({
-      message: 'WhatsApp client initializing',
-      status: 'CONNECTING',
-      qrCode: null
+      message: 'WhatsApp Business API configuration saved successfully',
+      status: check.status,
+      connectionMessage: check.message,
+      settings: updated
     });
   } catch (error) {
     next(error);
   }
 };
 
-const disconnectWhatsApp = async (req, res, next) => {
+/**
+ * Verifies live connection to the provider without fabricating success.
+ */
+const verifyConnection = async (req, res, next) => {
   try {
-    const companyId = req.companyId || req.user.id;
-    const { logout } = req.body;
-    const result = await whatsappService.disconnectUserClient(companyId, logout);
+    const companyId = req.companyId;
+    const result = await messagingProvider.checkConnection(companyId);
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${companyId}`).emit('whatsapp:provider_status', result);
+    }
+
     res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Sends an authorized test message to a specified recipient number.
+ */
+const sendTestMessage = async (req, res, next) => {
+  try {
+    const companyId = req.companyId;
+    const { recipientPhone, messageText } = req.body;
+
+    if (!recipientPhone) {
+      return res.status(400).json({ message: 'Recipient phone number is required for test message.' });
+    }
+
+    const result = await messagingProvider.sendTestMessage(
+      companyId,
+      recipientPhone,
+      messageText || 'DocSender Pro: Test verification message from official WhatsApp Business API.'
+    );
+
+    res.json({
+      message: 'Test message dispatched successfully',
+      result
+    });
   } catch (error) {
     next(error);
   }
@@ -60,7 +135,7 @@ const disconnectWhatsApp = async (req, res, next) => {
 
 module.exports = {
   getStatus,
-  getQrCode,
-  connectWhatsApp,
-  disconnectWhatsApp
+  saveConfiguration,
+  verifyConnection,
+  sendTestMessage
 };

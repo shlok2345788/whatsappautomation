@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import API from '../services/api';
 import { useSocket } from '../context/SocketContext';
 import { useWhatsApp } from '../context/WhatsAppContext';
@@ -87,7 +88,7 @@ const SendQueue = () => {
 
   const handleStartSending = async () => {
     if (wsStatus !== 'CONNECTED') {
-      return setError('WhatsApp is not connected. Please scan QR code first.');
+      return setError('WhatsApp Business API is not connected. Please configure and verify your Gupshup credentials before starting the queue.');
     }
 
     if (queueItems.length === 0) {
@@ -132,11 +133,16 @@ const SendQueue = () => {
     <div>
       {error && <div className="alert alert-danger">{error}</div>}
 
-      {/* WhatsApp Disconnected Warning */}
+      {/* WhatsApp Disconnected / Not Configured Warning */}
       {wsStatus !== 'CONNECTED' && (
-        <div className="alert alert-danger" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <AlertCircle size={18} />
-          <span>WhatsApp is currently disconnected. You must connect WhatsApp before starting the queue.</span>
+        <div className="alert alert-warning" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertCircle size={18} />
+            <span>WhatsApp Business API is not connected. Please configure your Gupshup credentials before starting the queue.</span>
+          </div>
+          <Link to="/dashboard/whatsapp" className="btn btn-sm btn-primary">
+            Configure WhatsApp API
+          </Link>
         </div>
       )}
 

@@ -23,6 +23,7 @@ const getCredentials = async (companyId) => {
   let appName = process.env.GUPSHUP_APP_NAME || '';
   let apiKey = process.env.GUPSHUP_API_KEY || '';
   let sourcePhone = process.env.GUPSHUP_SOURCE_PHONE || '';
+  let templateId = process.env.GUPSHUP_TEMPLATE_ID || '';
   let baseUrl = process.env.GUPSHUP_BASE_URL || 'https://api.gupshup.io/wa/api/v1';
 
   if (companyId) {
@@ -37,6 +38,7 @@ const getCredentials = async (companyId) => {
         if (settings.gupshupAppName) appName = settings.gupshupAppName;
         if (settings.gupshupApiKey) apiKey = settings.gupshupApiKey;
         if (settings.gupshupSourcePhone) sourcePhone = settings.gupshupSourcePhone;
+        if (settings.gupshupTemplateId) templateId = settings.gupshupTemplateId;
       }
     } catch (err) {
       console.warn(`[Gupshup] Could not load settings for company ${companyId}:`, err.message);
@@ -47,6 +49,7 @@ const getCredentials = async (companyId) => {
     appName,
     apiKey,
     sourcePhone: normalizePhone(sourcePhone),
+    templateId,
     baseUrl: baseUrl.replace(/\/+$/, '')
   };
 };
@@ -82,15 +85,31 @@ const sendPdfDocument = async (companyId, recipientPhone, filePath, originalFile
     };
   }
 
+  // Build document download URL for WhatsApp server
+  const serverBase = (process.env.PUBLIC_SERVER_URL || process.env.CLIENT_URL || 'http://localhost:5000').replace(/\/+$/, '');
+  const documentUrl = `${serverBase}/api/pdfs/download-signed/${encodeURIComponent(path.basename(filePath))}`;
+
+  // Message payload structure
+  let messagePayload;
+  if (creds.templateId) {
+    messagePayload = {
+      type: 'template',
+      template: {
+        id: creds.templateId,
+        params: [caption || originalFilename || 'Account Statement']
+      }
+    };
+  } else {
+    messagePayload = {
+      type: 'file',
+      url: documentUrl,
+      filename: originalFilename || path.basename(filePath),
+      caption: caption || ''
+    };
+  }
+
   // Live Gupshup API Dispatch
   const url = `${creds.baseUrl}/msg`;
-  const messagePayload = {
-    type: 'file',
-    url: `${process.env.PUBLIC_SERVER_URL || 'http://localhost:5000'}/api/pdfs/download-signed/${encodeURIComponent(path.basename(filePath))}`,
-    filename: originalFilename || path.basename(filePath),
-    caption: caption || ''
-  };
-
   const bodyParams = new URLSearchParams();
   bodyParams.append('channel', 'whatsapp');
   bodyParams.append('source', creds.sourcePhone);
@@ -138,16 +157,15 @@ const sendPdfDocument = async (companyId, recipientPhone, filePath, originalFile
 const handleWebhookEvent = async (eventBody, io) => {
   if (!eventBody) return { handled: false, reason: 'Empty payload' };
 
-  // Gupshup format: { type: 'message-event', payload: { id: 'msg_id', type: 'delivered'|'read'|'failed', ... } }
-  const eventType = eventBody.type;
-  const payload = eventBody.payload || {};
-  const messageId = payload.id;
+  // Support both Gupshup nested format { type: 'message-event', payload: { ... } }
+  // and flat format { id, type }
+  const payload = eventBody.payload || eventBody;
+  const messageId = payload.id || payload.messageId || eventBody.id;
+  const deliveryStatus = payload.type || payload.status || eventBody.type; // 'sent', 'delivered', 'read', 'failed'
 
-  if (eventType !== 'message-event' || !messageId) {
-    return { handled: false, reason: 'Not a message delivery event' };
+  if (!messageId || !deliveryStatus) {
+    return { handled: false, reason: 'Not a message delivery event or missing messageId' };
   }
-
-  const deliveryStatus = payload.type; // 'sent', 'delivered', 'read', 'failed'
 
   console.log(`[Gupshup Webhook] Received ${deliveryStatus} event for messageId: ${messageId}`);
 
@@ -167,14 +185,15 @@ const handleWebhookEvent = async (eventBody, io) => {
   if (deliveryStatus === 'delivered') mappedStatus = 'Delivered';
   else if (deliveryStatus === 'read') mappedStatus = 'Read';
   else if (deliveryStatus === 'failed') mappedStatus = 'Failed';
+  else if (deliveryStatus === 'sent') mappedStatus = 'Sent';
 
   const updates = {
     deliveryStatus,
     status: mappedStatus
   };
 
-  if (deliveryStatus === 'failed' && payload.cause) {
-    updates.errorReason = payload.cause;
+  if (deliveryStatus === 'failed' && (payload.cause || payload.reason)) {
+    updates.errorReason = payload.cause || payload.reason;
   }
 
   await supabase

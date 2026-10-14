@@ -108,4 +108,138 @@ test('Phase 2 - Gupshup WABA Integration Suite', async (t) => {
     assert.strictEqual(emittedEvents[0].event, 'message:status_update');
     assert.strictEqual(emittedEvents[0].payload.deliveryStatus, 'delivered');
   });
+
+  await t.test('Task 2.5: Missing or incomplete credentials produce clear setup status without errors', async () => {
+    const messagingProvider = require('../services/messaging/messagingProvider');
+    const freshCompanyId = 'unconfigured_company_' + Date.now();
+
+    const connection = await messagingProvider.checkConnection(freshCompanyId);
+    assert.ok(
+      connection.status === 'NOT_CONFIGURED' || connection.status === 'CONFIG_REQUIRED',
+      'Should report NOT_CONFIGURED or CONFIG_REQUIRED when credentials are not configured'
+    );
+    assert.strictEqual(connection.provider, 'gupshup');
+    assert.ok(connection.message.includes('not configured') || connection.message.includes('required'));
+  });
+
+  await t.test('Task 2.6: WhatsApp controller saveConfiguration securely upserts settings', async () => {
+    const whatsappController = require('../controllers/whatsappController');
+    const testCompanyId = 'cfg_company_' + Date.now();
+
+    const mockReq = {
+      companyId: testCompanyId,
+      body: {
+        appName: 'TestEnterpriseApp',
+        apiKey: 'secret_gupshup_key_9999',
+        sourcePhone: '919876543210',
+        templateId: 'test_invoice_v1'
+      },
+      app: {
+        get: () => ({
+          to: () => ({
+            emit: () => {}
+          })
+        })
+      }
+    };
+
+    let responseData = null;
+    const mockRes = {
+      json: (data) => {
+        responseData = data;
+        return mockRes;
+      }
+    };
+
+    await whatsappController.saveConfiguration(mockReq, mockRes, (err) => {
+      if (err) throw err;
+    });
+
+    assert.ok(responseData, 'Response data must exist');
+    assert.strictEqual(responseData.settings.gupshupAppName, 'TestEnterpriseApp');
+    assert.strictEqual(responseData.settings.gupshupSourcePhone, '919876543210');
+    assert.strictEqual(responseData.settings.gupshupTemplateId, 'test_invoice_v1');
+
+    // Verify getStatus masks the key
+    let statusData = null;
+    const mockStatusRes = {
+      json: (data) => {
+        statusData = data;
+        return mockStatusRes;
+      }
+    };
+
+    await whatsappController.getStatus({ companyId: testCompanyId }, mockStatusRes, (err) => {
+      if (err) throw err;
+    });
+
+    assert.ok(statusData, 'Status data must exist');
+    assert.strictEqual(statusData.appName, 'TestEnterpriseApp');
+    assert.strictEqual(statusData.sourcePhone, '919876543210');
+    assert.strictEqual(statusData.maskedApiKey, '••••••••9999');
+    assert.strictEqual(statusData.hasApiKey, true);
+  });
+
+  await t.test('Task 2.7: downloadSignedPdf serves valid PDF file and prevents traversal', async () => {
+    const pdfController = require('../controllers/pdfController');
+    const uploadsDir = path.resolve(__dirname, '../../uploads');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    const testFilename = `test_delivery_${Date.now()}.pdf`;
+    const testFilePath = path.join(uploadsDir, testFilename);
+    fs.writeFileSync(testFilePath, '%PDF-1.4 mock pdf for whatsapp delivery');
+
+    try {
+      const { Writable } = require('stream');
+      const headers = {};
+      let streamedBytes = 0;
+      const mockRes = new Writable({
+        write(chunk, encoding, callback) {
+          streamedBytes += chunk.length;
+          callback();
+        }
+      });
+      mockRes.setHeader = (k, v) => {
+        headers[k] = v;
+      };
+      mockRes.status = (code) => mockRes;
+
+      await new Promise((resolve, reject) => {
+        mockRes.on('finish', resolve);
+        mockRes.on('error', reject);
+        pdfController.downloadSignedPdf(
+          { params: { filename: testFilename } },
+          mockRes,
+          reject
+        );
+      });
+
+      assert.ok(streamedBytes > 0, 'Streamed PDF file bytes must be greater than 0');
+
+      // Verify traversal blocking
+      let traversalStatus = null;
+      const traversalRes = {
+        status: (code) => {
+          traversalStatus = code;
+          return {
+            json: () => {}
+          };
+        }
+      };
+
+      await pdfController.downloadSignedPdf(
+        { params: { filename: '../../package.json' } },
+        traversalRes,
+        () => {}
+      );
+
+      assert.ok(traversalStatus === 403 || traversalStatus === 404);
+    } finally {
+      if (fs.existsSync(testFilePath)) {
+        try { fs.unlinkSync(testFilePath); } catch (e) {}
+      }
+    }
+  });
 });

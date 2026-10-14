@@ -40,6 +40,38 @@ const downloadPdfFile = async (req, res, next) => {
   }
 };
 
+/**
+ * Public document delivery endpoint allowing WhatsApp media servers
+ * to download the PDF attachment securely.
+ */
+const downloadSignedPdf = async (req, res, next) => {
+  try {
+    const { filename } = req.params;
+    if (!filename) {
+      return res.status(400).json({ message: 'Filename required' });
+    }
+
+    const decodedFilename = decodeURIComponent(filename);
+    const uploadsDir = path.resolve(process.env.UPLOADS_DIR || path.join(__dirname, '../../uploads'));
+    const safePath = path.resolve(uploadsDir, path.basename(decodedFilename));
+
+    if (!safePath.startsWith(uploadsDir)) {
+      return res.status(403).json({ message: 'Access denied: Invalid file location' });
+    }
+
+    if (!fs.existsSync(safePath)) {
+      return res.status(404).json({ message: 'File not found on storage disk' });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(path.basename(safePath))}"`);
+    const stream = fs.createReadStream(safePath);
+    stream.pipe(res);
+  } catch (error) {
+    next(error);
+  }
+};
+
 const uploadFiles = async (req, res, next) => {
   try {
     if (!req.files || req.files.length === 0) {
@@ -141,6 +173,7 @@ const deletePdfFiles = async (req, res, next) => {
 
 module.exports = {
   downloadPdfFile,
+  downloadSignedPdf,
   uploadFiles,
   getPdfFiles,
   deletePdfFiles

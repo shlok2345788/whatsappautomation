@@ -26,27 +26,12 @@ const { storageProvider } = require('./services/supabaseClient');
 // Initialize DB Connection
 connectDB();
 
-// Global resilience handlers for Puppeteer headless browser navigation
+// Process-level error logging
 process.on('unhandledRejection', (reason) => {
-  const msg = reason?.message || String(reason || '');
-  if (
-    msg.includes('Execution context was destroyed') ||
-    msg.includes('Target closed') ||
-    msg.includes('Session closed') ||
-    msg.includes('Protocol error')
-  ) {
-    console.warn('[Puppeteer Navigation] Page transitioned/navigated during evaluation, continuing...');
-    return;
-  }
   console.error('[Unhandled Rejection]', reason);
 });
 
 process.on('uncaughtException', (err) => {
-  const msg = err?.message || String(err || '');
-  if (msg.includes('Execution context was destroyed') || msg.includes('Target closed')) {
-    console.warn('[Puppeteer Exception Handled] Context navigated:', msg);
-    return;
-  }
   console.error('[Uncaught Exception]', err);
 });
 

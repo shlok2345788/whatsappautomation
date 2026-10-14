@@ -14,7 +14,7 @@ const TopBar = ({ title }) => {
 
       <div className="top-bar-right">
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500 }}>WhatsApp Status:</span>
+          <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500 }}>WhatsApp API:</span>
           <StatusBadge status={status} />
         </div>
 

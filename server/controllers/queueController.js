@@ -1,5 +1,5 @@
 const queueService = require('../services/queue/queueService');
-const whatsappService = require('../services/whatsapp/whatsappService');
+const messagingProvider = require('../services/messaging/messagingProvider');
 
 const startQueue = async (req, res, next) => {
   try {
@@ -10,9 +10,11 @@ const startQueue = async (req, res, next) => {
       return res.status(400).json({ message: 'No items provided for sending queue' });
     }
 
-    const wsStatus = whatsappService.getClientStatus(companyId);
-    if (wsStatus !== 'CONNECTED') {
-      return res.status(400).json({ message: 'WhatsApp is not connected for this company. Please scan QR code first.' });
+    const connection = await messagingProvider.checkConnection(companyId);
+    if (connection.status !== 'CONNECTED') {
+      return res.status(400).json({
+        message: `WhatsApp Business API is not ready (${connection.message}). Please verify credentials in WhatsApp Setup.`
+      });
     }
 
     const io = req.app.get('io');
@@ -32,7 +34,7 @@ const startQueue = async (req, res, next) => {
 const cancelQueue = async (req, res, next) => {
   try {
     const companyId = req.companyId || req.user.id || req.user._id;
-    const success = queueService.cancelQueue(companyId);
+    const success = await queueService.cancelQueue(companyId);
     res.json({
       message: success ? 'Queue cancellation requested' : 'No active queue to cancel',
       success

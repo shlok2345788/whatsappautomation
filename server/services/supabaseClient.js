@@ -30,7 +30,7 @@ class SqliteQueryBuilder {
   }
 
   select(cols = '*', options = {}) {
-    if (this.operation !== 'insert') {
+    if (this.operation !== 'insert' && this.operation !== 'upsert' && this.operation !== 'update') {
       this.operation = 'select';
     }
     this.selectCols = cols;
@@ -261,26 +261,30 @@ class SqliteQueryBuilder {
     }
 
     if (this.operation === 'upsert') {
-      const item = this.insertData[0];
+      const item = { ...this.insertData[0] };
       const now = new Date().toISOString();
-      if (!item.updatedAt) item.updatedAt = now;
-      if (!item.createdAt && !item.created_at) item.createdAt = now;
+      const tableColumns = new Set(
+        db.prepare(`PRAGMA table_info(${this.tableName})`).all().map((column) => column.name)
+      );
+
+      if (tableColumns.has('updatedAt') && !item.updatedAt) item.updatedAt = now;
+      if (tableColumns.has('createdAt') && !item.createdAt && !item.created_at) item.createdAt = now;
 
       const conflictCol = this.onConflict || 'company_id';
       const conflictVal = sanitizeValue(item[conflictCol]);
       const existing = db.prepare(`SELECT * FROM ${this.tableName} WHERE ${conflictCol} = ?`).get(conflictVal);
 
       if (existing) {
-        const keys = Object.keys(item).filter((k) => k !== conflictCol && k !== 'id');
+        const keys = Object.keys(item).filter((k) => k !== conflictCol && k !== 'id' && tableColumns.has(k));
         const setClause = keys.map((k) => `${k} = ?`).join(',');
         const values = keys.map((k) => sanitizeValue(item[k]));
 
         const sql = `UPDATE ${this.tableName} SET ${setClause} WHERE ${conflictCol} = ?`;
         db.prepare(sql).run(...values, conflictVal);
       } else {
-        const keys = Object.keys(item);
+        const keys = Object.keys(item).filter((k) => tableColumns.has(k));
         const placeholders = keys.map(() => '?').join(',');
-        const values = Object.values(item).map(sanitizeValue);
+        const values = keys.map((k) => sanitizeValue(item[k]));
         const sql = `INSERT INTO ${this.tableName} (${keys.join(',')}) VALUES (${placeholders})`;
         db.prepare(sql).run(...values);
       }

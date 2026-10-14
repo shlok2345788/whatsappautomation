@@ -9,22 +9,43 @@ export const WhatsAppProvider = ({ children }) => {
   const { user } = useAuth();
   const { socket } = useSocket();
 
-  const [status, setStatus] = useState('DISCONNECTED');
-  const [qrCode, setQrCode] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState('NOT_CONFIGURED');
+  const [provider, setProvider] = useState('gupshup');
+  const [appName, setAppName] = useState('');
+  const [sourcePhone, setSourcePhone] = useState('');
+  const [templateId, setTemplateId] = useState('');
+  const [maskedApiKey, setMaskedApiKey] = useState('');
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const fetchStatus = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
     try {
+      setError('');
       const res = await API.get('/whatsapp/status');
-      setStatus(res.data.status || 'DISCONNECTED');
-      setQrCode(res.data.qrCode || null);
-      setError(res.data.error || '');
+      const data = res.data || {};
+      setStatus(data.status || 'NOT_CONFIGURED');
+      setProvider(data.provider || 'gupshup');
+      setMessage(data.message || '');
+      setAppName(data.appName || '');
+      setSourcePhone(data.sourcePhone || '');
+      setTemplateId(data.templateId || '');
+      setMaskedApiKey(data.maskedApiKey || '');
+      setHasApiKey(Boolean(data.hasApiKey));
     } catch (err) {
-      const message = err.response?.data?.message || 'Unable to fetch WhatsApp status';
-      setError(message);
-      console.error('Error fetching WhatsApp status:', err);
+      const isAuthError = err.response?.status === 401;
+      if (!isAuthError) {
+        console.warn('Unable to query WhatsApp provider status:', err.message);
+        setError(err.response?.data?.message || 'Unable to communicate with WhatsApp Business API service');
+        setStatus('ERROR');
+      }
+    } finally {
+      setLoading(false);
     }
   }, [user]);
 
@@ -32,97 +53,90 @@ export const WhatsAppProvider = ({ children }) => {
     fetchStatus();
   }, [fetchStatus]);
 
-  useEffect(() => {
-    if (!user || status === 'CONNECTED') return undefined;
-
-    const intervalId = window.setInterval(fetchStatus, 2000);
-    const handleFocus = () => fetchStatus();
-    window.addEventListener('focus', handleFocus);
-
-    return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, [fetchStatus, status, user]);
-
+  // Listen for real-time provider status updates via WebSocket
   useEffect(() => {
     if (!socket) return;
 
-    const handleStatus = (data) => {
-      if (data && data.status) {
-        setStatus(data.status);
-        if (data.status !== 'WAITING_QR') {
-          setQrCode(null);
+    const handleProviderStatus = (data) => {
+      if (data) {
+        if (data.status) setStatus(data.status);
+        if (data.message) setMessage(data.message);
+        if (data.appName) setAppName(data.appName);
+        if (data.senderPhone || data.sourcePhone) {
+          setSourcePhone(data.senderPhone || data.sourcePhone);
         }
       }
-      setError(data?.error || '');
     };
 
-    const handleQr = (data) => {
-      if (data && data.qrCode) {
-        setQrCode(data.qrCode);
-        setStatus('WAITING_QR');
-      }
-    };
-
-    const handleConnected = () => {
-      setStatus('CONNECTED');
-      setQrCode(null);
-    };
-
-    const handleDisconnected = () => {
-      setStatus('DISCONNECTED');
-      setQrCode(null);
-    };
-
-    socket.on('whatsapp:status', handleStatus);
-    socket.on('whatsapp:qr', handleQr);
-    socket.on('whatsapp:connected', handleConnected);
-    socket.on('whatsapp:disconnected', handleDisconnected);
+    socket.on('whatsapp:provider_status', handleProviderStatus);
     socket.on('connect', fetchStatus);
 
     return () => {
-      socket.off('whatsapp:status', handleStatus);
-      socket.off('whatsapp:qr', handleQr);
-      socket.off('whatsapp:connected', handleConnected);
-      socket.off('whatsapp:disconnected', handleDisconnected);
+      socket.off('whatsapp:provider_status', handleProviderStatus);
       socket.off('connect', fetchStatus);
     };
   }, [fetchStatus, socket]);
 
-  const connect = async (cleanSession = false) => {
+  const saveConfiguration = async (configData) => {
     setLoading(true);
     setError('');
     try {
-      const res = await API.post('/whatsapp/connect', { cleanSession });
-      setStatus(res.data.status || 'CONNECTING');
-      if (res.data.qrCode) {
-        setQrCode(res.data.qrCode);
-      }
+      const res = await API.post('/whatsapp/config', configData);
+      await fetchStatus();
+      return res.data;
     } catch (err) {
-      setError(err.response?.data?.message || 'WhatsApp initialization failed');
-      console.error('Connect WhatsApp failed:', err);
+      const msg = err.response?.data?.message || 'Failed to save configuration';
+      setError(msg);
+      throw err;
     } finally {
       setLoading(false);
     }
   };
 
-  const disconnect = async (logout = false) => {
+  const verifyConnection = async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await API.post('/whatsapp/disconnect', { logout });
-      setStatus(res.data.status || 'DISCONNECTED');
-      setQrCode(null);
+      const res = await API.post('/whatsapp/verify');
+      await fetchStatus();
+      return res.data;
     } catch (err) {
-      console.error('Disconnect WhatsApp failed:', err);
+      const msg = err.response?.data?.message || 'Verification check failed';
+      setError(msg);
+      throw err;
     } finally {
       setLoading(false);
     }
+  };
+
+  const sendTestMessage = async (recipientPhone, messageText) => {
+    const res = await API.post('/whatsapp/test-message', { recipientPhone, messageText });
+    return res.data;
   };
 
   return (
-    <WhatsAppContext.Provider value={{ status, qrCode, loading, error, connect, disconnect, fetchStatus }}>
+    <WhatsAppContext.Provider
+      value={{
+        status,
+        provider,
+        appName,
+        sourcePhone,
+        templateId,
+        maskedApiKey,
+        hasApiKey,
+        message,
+        loading,
+        error,
+        fetchStatus,
+        saveConfiguration,
+        verifyConnection,
+        sendTestMessage,
+        // Deprecated stubs to prevent runtime crashes if accessed
+        qrCode: null,
+        connect: () => {},
+        disconnect: () => {}
+      }}
+    >
       {children}
     </WhatsAppContext.Provider>
   );
@@ -131,8 +145,25 @@ export const WhatsAppProvider = ({ children }) => {
 export const useWhatsApp = () => {
   const context = useContext(WhatsAppContext);
   if (!context) {
-    // Safe default — prevents crash if called outside provider or during HMR
-    return { status: 'DISCONNECTED', qrCode: null, loading: false, connect: () => {}, disconnect: () => {}, fetchStatus: () => {} };
+    return {
+      status: 'NOT_CONFIGURED',
+      provider: 'gupshup',
+      appName: '',
+      sourcePhone: '',
+      templateId: '',
+      maskedApiKey: '',
+      hasApiKey: false,
+      message: '',
+      loading: false,
+      error: '',
+      fetchStatus: () => {},
+      saveConfiguration: async () => {},
+      verifyConnection: async () => {},
+      sendTestMessage: async () => {},
+      qrCode: null,
+      connect: () => {},
+      disconnect: () => {}
+    };
   }
   return context;
 };

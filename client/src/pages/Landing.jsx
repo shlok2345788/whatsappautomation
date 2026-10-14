@@ -462,8 +462,8 @@ const Landing = () => {
 
               <div className="lp-feat-card">
                 <div className="lp-feat-icon">⬡</div>
-                <div className="lp-feat-title">WhatsApp QR Connection</div>
-                <div className="lp-feat-desc">Scan a QR code to connect your WhatsApp. Session persists locally — no re-scanning on restart.</div>
+                <div className="lp-feat-title">WhatsApp Business API</div>
+                <div className="lp-feat-desc">Connect official Gupshup WhatsApp Business Cloud API with dedicated sender number and real-time delivery webhooks.</div>
               </div>
 
               <div className="lp-feat-card">
@@ -502,8 +502,8 @@ const Landing = () => {
               </div>
               <div className="lp-step">
                 <div className="lp-step-num-big"><span>02</span></div>
-                <div className="lp-step-title">Connect WhatsApp</div>
-                <div className="lp-step-desc">Scan the QR code with your phone. Your session is saved locally and persists across restarts.</div>
+                <div className="lp-step-title">Connect WhatsApp API</div>
+                <div className="lp-step-desc">Configure your Gupshup API credentials to enable high-volume automated invoice dispatch without browser crashes.</div>
               </div>
               <div className="lp-step">
                 <div className="lp-step-num-big"><span>03</span></div>
@@ -599,15 +599,15 @@ const Landing = () => {
           <div className="lp-mc-inner">
             <div>
               <span className="lp-eyebrow">Multi-Company</span>
-              <h2 className="lp-h2">Every company connects its own WhatsApp.</h2>
-              <p className="lp-sub">Each company has its own contacts, documents, history and WhatsApp session. Sessions are fully isolated — Company A can never inherit Company B's connection.</p>
+              <h2 className="lp-h2">Every company connects its own WhatsApp API.</h2>
+              <p className="lp-sub">Each company has its own contacts, documents, history and Gupshup WABA credentials. Configurations are fully isolated — Company A can never inherit Company B's credentials.</p>
               <div style={{marginTop:'28px',padding:'18px 20px',background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'10px',display:'inline-block'}}>
-                <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)',marginBottom:'6px'}}>Session directories</div>
+                <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)',marginBottom:'6px'}}>Multi-Tenant API Isolation</div>
                 <div style={{fontSize:'12px',fontFamily:'monospace',color:'var(--text-muted)',lineHeight:1.8}}>
-                  whatsapp_sessions/<br/>
-                  &nbsp;&nbsp;session-company_1/<br/>
-                  &nbsp;&nbsp;session-company_2/<br/>
-                  &nbsp;&nbsp;session-company_3/
+                  Encrypted Settings Storage<br/>
+                  &nbsp;&nbsp;company_1 &rarr; Gupshup WABA App 1<br/>
+                  &nbsp;&nbsp;company_2 &rarr; Gupshup WABA App 2<br/>
+                  &nbsp;&nbsp;company_3 &rarr; Gupshup WABA App 3
                 </div>
               </div>
             </div>
@@ -616,7 +616,7 @@ const Landing = () => {
                 <div className="lp-co-init">A</div>
                 <div style={{flex:1}}>
                   <div className="lp-co-name">Acme Corp</div>
-                  <div className="lp-co-detail">245 contacts · 218 PDFs · Session: company_1</div>
+                  <div className="lp-co-detail">245 contacts · 218 PDFs · Dedicated Sender</div>
                 </div>
                 <span className="lp-co-badge connected"><span style={{width:'6px',height:'6px',borderRadius:'50%',background:'var(--green)',display:'inline-block'}}></span> Connected</span>
               </div>
@@ -624,12 +624,12 @@ const Landing = () => {
                 <div className="lp-co-init b">B</div>
                 <div style={{flex:1}}>
                   <div className="lp-co-name">Beta Solutions</div>
-                  <div className="lp-co-detail">89 contacts · 76 PDFs · Session: company_2</div>
+                  <div className="lp-co-detail">89 contacts · 76 PDFs · Dedicated Sender</div>
                 </div>
-                <span className="lp-co-badge ready">QR Ready</span>
+                <span className="lp-co-badge ready">API Ready</span>
               </div>
               <div style={{padding:'16px 20px',background:'var(--border-soft)',border:'1px dashed var(--border)',borderRadius:'10px',textAlign:'center'}}>
-                <div style={{fontSize:'12.5px',color:'var(--text-muted)'}}>Each company logs in independently.<br/>Scanning QR always generates a fresh code.</div>
+                <div style={{fontSize:'12.5px',color:'var(--text-muted)'}}>Each company logs in independently.<br/>Gupshup API delivers 100% cloud reliability.</div>
               </div>
             </div>
           </div>
@@ -683,7 +683,7 @@ const Landing = () => {
             </div>
             <div className="lp-faq-list">
               {[
-                ['How does it work?', 'Import your Excel contact list, select the folder containing your PDF documents, connect your WhatsApp by scanning a QR code, and start the sending queue. The system automatically matches each PDF to the correct contact and delivers it.'],
+                ['How does it work?', 'Import your Excel contact list, upload your customer PDF invoices, configure your Gupshup WhatsApp Business API credentials, and start the sending queue. The system automatically matches each PDF to the correct contact and delivers it with delivery receipts.'],
                 ['Do I need to enter every WhatsApp number manually?', 'No. Numbers are imported directly from your Excel file. The system normalizes Indian numbers automatically — 10-digit, +91 prefix, 0 prefix, and 91 prefix formats are all supported.'],
                 ['Can different companies use it independently?', 'Yes. Each company registers with its own account. Contacts, PDFs, message history, settings, and WhatsApp sessions are fully isolated per company.'],
                 ['Do I need MongoDB or any external database?', 'No. The application uses a local SQLite database. No external database server, MongoDB Atlas, or cloud service is required.'],
