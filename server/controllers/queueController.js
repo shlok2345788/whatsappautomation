@@ -57,8 +57,37 @@ const getQueueStatus = async (req, res, next) => {
   }
 };
 
+const resumeQueue = async (req, res, next) => {
+  try {
+    const companyId = req.companyId || req.user.id || req.user._id;
+    const { batchId } = req.params;
+
+    if (!batchId) {
+      return res.status(400).json({ message: 'Missing required batchId' });
+    }
+
+    const connection = await messagingProvider.checkConnection(companyId);
+    if (connection.status !== 'CONNECTED') {
+      return res.status(400).json({
+        message: `WhatsApp Business API is not ready (${connection.message}). Please verify credentials in WhatsApp Setup.`
+      });
+    }
+
+    const io = req.app.get('io');
+    const result = await queueService.resumeBatch(companyId, Number(batchId), io);
+
+    res.json({
+      message: 'Queue resumption initiated',
+      result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   startQueue,
   cancelQueue,
-  getQueueStatus
+  getQueueStatus,
+  resumeQueue
 };

@@ -242,6 +242,32 @@ const initDatabase = () => {
       createdAt TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_tally_ledgers_company ON tally_ledgers(company_id, run_id);
+
+    CREATE TABLE IF NOT EXISTS queue_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_id INTEGER NOT NULL,
+      company_id TEXT NOT NULL,
+      contactId INTEGER DEFAULT NULL,
+      recipientName TEXT NOT NULL,
+      recipientPhone TEXT NOT NULL,
+      pdfId INTEGER NOT NULL,
+      pdfFilename TEXT NOT NULL,
+      pdfPath TEXT NOT NULL,
+      fileHash TEXT DEFAULT '',
+      messageText TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      deliveryStatus TEXT DEFAULT 'pending',
+      attemptCount INTEGER NOT NULL DEFAULT 0,
+      providerMessageId TEXT DEFAULT '',
+      errorReason TEXT DEFAULT '',
+      approvalRef TEXT DEFAULT NULL,
+      logId INTEGER DEFAULT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_queue_items_batch ON queue_items(batch_id, status);
+    CREATE INDEX IF NOT EXISTS idx_queue_items_company_status ON queue_items(company_id, status);
+    CREATE INDEX IF NOT EXISTS idx_queue_items_provider_msg ON queue_items(providerMessageId);
   `);
 
   // Run incremental column additions safely if tables existed
