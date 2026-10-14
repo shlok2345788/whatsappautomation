@@ -28,6 +28,7 @@ const SendQueue = () => {
 
       // Format into queue items
       const items = matched.map((m) => ({
+        pdfId: m.pdfId,
         contactId: m.contactId,
         name: m.contactName,
         phone: m.phone,
@@ -101,7 +102,11 @@ const SendQueue = () => {
 
     try {
       await API.post('/messages/start', {
-        queueItems,
+        queueItems: queueItems.map((item) => ({
+          pdfId: item.pdfId,
+          contactId: item.contactId,
+          forceSend: item.forceSend
+        })),
         messageTemplate
       });
     } catch (err) {

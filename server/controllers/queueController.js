@@ -19,12 +19,15 @@ const startQueue = async (req, res, next) => {
 
     const io = req.app.get('io');
 
-    queueService.processSendQueue(companyId, queueItems, messageTemplate, io)
+    // Pre-validate queue items on server before starting dispatch
+    const validatedItems = await queueService.validateAndResolveQueueItems(companyId, queueItems);
+
+    queueService.processSendQueue(companyId, validatedItems, messageTemplate, io)
       .catch((err) => console.error('Queue execution error:', err.message));
 
     res.json({
       message: 'Send queue started successfully',
-      itemCount: queueItems.length
+      itemCount: validatedItems.length
     });
   } catch (error) {
     next(error);

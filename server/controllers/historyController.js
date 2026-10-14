@@ -50,6 +50,35 @@ const retryMessage = async (req, res, next) => {
       return res.status(404).json({ message: 'Message log not found' });
     }
 
+    // Server-side authorization check: Re-verify recipient contact
+    let recipientPhone = logEntry.phone;
+    if (logEntry.contactId) {
+      const { data: contact } = await supabase
+        .from('contacts')
+        .select('mobile, isValid')
+        .eq('id', logEntry.contactId)
+        .eq('company_id', companyId)
+        .maybeSingle();
+
+      if (contact && contact.mobile) {
+        recipientPhone = contact.mobile;
+      }
+    }
+
+    // Server-side authorization check: Re-verify PDF file record for this company
+    const { data: pdfRow } = await supabase
+      .from('pdf_files')
+      .select('filePath')
+      .eq('originalFilename', logEntry.pdfFilename)
+      .eq('company_id', companyId)
+      .maybeSingle();
+
+    const resolvedPdfPath = pdfRow?.filePath || logEntry.pdfPath;
+    const fs = require('fs');
+    if (!resolvedPdfPath || !fs.existsSync(resolvedPdfPath)) {
+      return res.status(404).json({ message: 'PDF document file is missing or inaccessible' });
+    }
+
     const connection = await messagingProvider.checkConnection(companyId);
     if (connection.status !== 'CONNECTED') {
       return res.status(400).json({
@@ -62,8 +91,8 @@ const retryMessage = async (req, res, next) => {
     try {
       const sendResult = await messagingProvider.sendPdfDocument(
         companyId,
-        logEntry.phone,
-        logEntry.pdfPath,
+        recipientPhone,
+        resolvedPdfPath,
         logEntry.pdfFilename,
         logEntry.messageText
       );

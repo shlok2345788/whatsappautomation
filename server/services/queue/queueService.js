@@ -1,7 +1,78 @@
+const fs = require('fs');
 const { supabase } = require('../supabaseClient');
 const messagingProvider = require('../messaging/messagingProvider');
 
 const activeQueues = {};
+
+/**
+ * Validates queue items against server database records and resolves all recipient
+ * and file metadata exclusively from authorized server-side tables.
+ */
+const validateAndResolveQueueItems = async (companyId, rawItems) => {
+  if (!Array.isArray(rawItems) || rawItems.length === 0) {
+    throw new Error('Queue items must be a non-empty array');
+  }
+
+  const validated = [];
+
+  for (const item of rawItems) {
+    const pdfId = item.pdfId || item.id;
+    if (!pdfId) {
+      throw new Error('Missing required server-generated pdfId');
+    }
+
+    // 1. Resolve and verify PDF ownership strictly from database
+    const { data: pdfRow, error: pdfErr } = await supabase
+      .from('pdf_files')
+      .select('*')
+      .eq('id', pdfId)
+      .eq('company_id', companyId)
+      .maybeSingle();
+
+    if (pdfErr || !pdfRow) {
+      throw new Error(`Unauthorized or invalid PDF identifier: ${pdfId}`);
+    }
+
+    if (!fs.existsSync(pdfRow.filePath)) {
+      throw new Error(`PDF document '${pdfRow.originalFilename}' is not available on storage`);
+    }
+
+    // 2. Resolve authorized recipient contact strictly from server database
+    const contactId = item.contactId || pdfRow.matchedContactId;
+    if (!contactId) {
+      throw new Error(`PDF '${pdfRow.originalFilename}' has no authorized matched contact`);
+    }
+
+    const { data: contactRow, error: contactErr } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('id', contactId)
+      .eq('company_id', companyId)
+      .maybeSingle();
+
+    if (contactErr || !contactRow) {
+      throw new Error(`Unauthorized contact: Contact record does not belong to authorized company`);
+    }
+
+    if (!contactRow.mobile || String(contactRow.mobile).replace(/\D/g, '').length < 10) {
+      throw new Error(`Contact '${contactRow.name}' does not have a valid mobile phone number`);
+    }
+
+    // 3. Assemble validated server-authoritative record
+    validated.push({
+      pdfId: pdfRow.id,
+      contactId: contactRow.id,
+      name: contactRow.name,
+      phone: contactRow.mobile,
+      pdfFilename: pdfRow.originalFilename,
+      pdfPath: pdfRow.filePath,
+      fileHash: pdfRow.fileHash || '',
+      forceSend: Boolean(item.forceSend)
+    });
+  }
+
+  return validated;
+};
 
 /**
  * Crash Recovery: Recovers interrupted queue batches and message logs from ungraceful server restarts.
@@ -39,10 +110,13 @@ const formatTemplate = (template, data) => {
   });
 };
 
-const processSendQueue = async (companyId, queueItems, customMessageTemplate, io) => {
+const processSendQueue = async (companyId, rawQueueItems, customMessageTemplate, io) => {
   if (activeQueues[companyId] && activeQueues[companyId].isRunning) {
     throw new Error('A sending process is already running for this company');
   }
+
+  // Validate and resolve items strictly against server database records
+  const queueItems = await validateAndResolveQueueItems(companyId, rawQueueItems);
 
   activeQueues[companyId] = { isRunning: true, isCancelled: false };
 
@@ -184,11 +258,23 @@ const processSendQueue = async (companyId, queueItems, customMessageTemplate, io
     }
 
     try {
+      // Re-verify PDF ownership and file existence strictly at execution time
+      const { data: verifiedPdf } = await supabase
+        .from('pdf_files')
+        .select('id, filePath, originalFilename')
+        .eq('id', item.pdfId)
+        .eq('company_id', companyId)
+        .maybeSingle();
+
+      if (!verifiedPdf || !fs.existsSync(verifiedPdf.filePath)) {
+        throw new Error('Document access authorization revoked or file removed before dispatch');
+      }
+
       const sendResult = await messagingProvider.sendPdfDocument(
         companyId,
         item.phone,
-        item.pdfPath,
-        item.pdfFilename,
+        verifiedPdf.filePath,
+        verifiedPdf.originalFilename,
         messageText
       );
       const messageId = sendResult?.messageId || '';
@@ -287,6 +373,7 @@ const getQueueStatus = (companyId) => {
 recoverOrphanedQueues();
 
 module.exports = {
+  validateAndResolveQueueItems,
   processSendQueue,
   cancelQueue,
   getQueueStatus,
