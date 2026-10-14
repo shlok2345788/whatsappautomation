@@ -1,4 +1,5 @@
 const { supabase } = require('../services/supabaseClient');
+const { encrypt, decrypt, maskKey } = require('../services/security/encryptionService');
 
 const getSettings = async (req, res, next) => {
   try {
@@ -30,20 +31,39 @@ const getSettings = async (req, res, next) => {
         .select()
         .single();
       if (insertErr) throw insertErr;
-      return res.json(created);
+      const safeCreated = { ...created };
+      delete safeCreated.gupshupApiKey;
+      safeCreated.hasApiKey = Boolean(process.env.GUPSHUP_API_KEY);
+      safeCreated.maskedApiKey = process.env.GUPSHUP_API_KEY ? maskKey(process.env.GUPSHUP_API_KEY) : '';
+      safeCreated.gupshupApiKeyMasked = safeCreated.maskedApiKey;
+      return res.json(safeCreated);
     }
 
-    // Mask sensitive API Key for security in response
+    // Mask sensitive API Key for security in response and strip raw secret
     const safeSettings = { ...settings };
+    let hasKey = false;
+    let masked = '';
+
     if (safeSettings.gupshupApiKey) {
-      const keyLen = safeSettings.gupshupApiKey.length;
-      safeSettings.gupshupApiKeyMasked = keyLen > 4
-        ? '••••••••' + safeSettings.gupshupApiKey.slice(-4)
-        : '••••••••';
-      safeSettings.hasApiKey = true;
-    } else {
-      safeSettings.hasApiKey = Boolean(process.env.GUPSHUP_API_KEY);
+      try {
+        const decryptedKey = decrypt(safeSettings.gupshupApiKey);
+        if (decryptedKey) {
+          hasKey = true;
+          masked = maskKey(decryptedKey);
+        }
+      } catch (e) {
+        hasKey = true;
+        masked = '••••••••';
+      }
+    } else if (process.env.GUPSHUP_API_KEY) {
+      hasKey = true;
+      masked = maskKey(process.env.GUPSHUP_API_KEY);
     }
+
+    delete safeSettings.gupshupApiKey;
+    safeSettings.hasApiKey = hasKey;
+    safeSettings.maskedApiKey = masked;
+    safeSettings.gupshupApiKeyMasked = masked;
 
     res.json(safeSettings);
   } catch (error) {
@@ -69,7 +89,7 @@ const updateSettings = async (req, res, next) => {
     if (gupshupAppName !== undefined) updates.gupshupAppName = gupshupAppName;
     if (gupshupSourcePhone !== undefined) updates.gupshupSourcePhone = gupshupSourcePhone;
     if (gupshupApiKey !== undefined && !gupshupApiKey.includes('••••')) {
-      updates.gupshupApiKey = gupshupApiKey;
+      updates.gupshupApiKey = encrypt(gupshupApiKey.trim());
     }
     if (delayBetweenMessages !== undefined) updates.delayBetweenMessages = Number(delayBetweenMessages);
     if (messageTemplate !== undefined) updates.messageTemplate = messageTemplate;
@@ -83,7 +103,26 @@ const updateSettings = async (req, res, next) => {
       .single();
 
     if (error) throw error;
-    res.json({ message: 'Settings updated successfully', settings: updated });
+
+    const safeUpdated = { ...updated };
+    const hasKey = Boolean(safeUpdated.gupshupApiKey || process.env.GUPSHUP_API_KEY);
+    let masked = '';
+    if (safeUpdated.gupshupApiKey) {
+      try {
+        masked = maskKey(decrypt(safeUpdated.gupshupApiKey));
+      } catch (e) {
+        masked = '••••••••';
+      }
+    } else if (process.env.GUPSHUP_API_KEY) {
+      masked = maskKey(process.env.GUPSHUP_API_KEY);
+    }
+
+    delete safeUpdated.gupshupApiKey;
+    safeUpdated.hasApiKey = hasKey;
+    safeUpdated.maskedApiKey = masked;
+    safeUpdated.gupshupApiKeyMasked = masked;
+
+    res.json({ message: 'Settings updated successfully', settings: safeUpdated });
   } catch (error) {
     next(error);
   }

@@ -239,8 +239,29 @@ const formatRows = (rows) => {
   return rows.map(formatRow);
 };
 
+const migratePlaintextSettings = () => {
+  try {
+    const { encrypt, decrypt } = require('../services/security/encryptionService');
+    const rows = db.prepare("SELECT id, company_id, gupshupApiKey FROM settings WHERE gupshupApiKey != '' AND gupshupApiKey NOT LIKE 'enc:v1:%'").all();
+    for (const row of rows) {
+      if (row.gupshupApiKey && !row.gupshupApiKey.startsWith('enc:v1:')) {
+        const encrypted = encrypt(row.gupshupApiKey);
+        const verified = decrypt(encrypted);
+        if (verified === row.gupshupApiKey) {
+          db.prepare("UPDATE settings SET gupshupApiKey = ? WHERE id = ?").run(encrypted, row.id);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[SQLite Database] Settings encryption migration notice:', err.message);
+  }
+};
+
+migratePlaintextSettings();
+
 module.exports = {
   db,
   formatRow,
-  formatRows
+  formatRows,
+  migratePlaintextSettings
 };

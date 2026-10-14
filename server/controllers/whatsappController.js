@@ -1,6 +1,7 @@
 const { supabase } = require('../services/supabaseClient');
 const messagingProvider = require('../services/messaging/messagingProvider');
 const gupshupService = require('../services/whatsapp/gupshupService');
+const { encrypt, decrypt, maskKey } = require('../services/security/encryptionService');
 
 /**
  * Retrieves the current WhatsApp Business API configuration and connection status.
@@ -17,9 +18,16 @@ const getStatus = async (req, res, next) => {
       .eq('company_id', companyId)
       .maybeSingle();
 
-    const maskedApiKey = settings?.gupshupApiKey
-      ? '••••••••' + settings.gupshupApiKey.slice(-4)
-      : (process.env.GUPSHUP_API_KEY ? '••••••••' + process.env.GUPSHUP_API_KEY.slice(-4) : '');
+    let maskedApiKey = '';
+    if (settings?.gupshupApiKey) {
+      try {
+        maskedApiKey = maskKey(decrypt(settings.gupshupApiKey));
+      } catch (e) {
+        maskedApiKey = '••••••••';
+      }
+    } else if (process.env.GUPSHUP_API_KEY) {
+      maskedApiKey = maskKey(process.env.GUPSHUP_API_KEY);
+    }
 
     res.json({
       status: connection.status, // 'CONNECTED' | 'NOT_CONFIGURED' | 'CONFIG_REQUIRED' | 'ERROR'
@@ -56,7 +64,7 @@ const saveConfiguration = async (req, res, next) => {
 
     // Only update API key if user supplied a new value (not masked dots)
     if (apiKey && !apiKey.includes('••••')) {
-      updates.gupshupApiKey = apiKey.trim();
+      updates.gupshupApiKey = encrypt(apiKey.trim());
     }
 
     const { data: updated, error } = await supabase
@@ -76,11 +84,15 @@ const saveConfiguration = async (req, res, next) => {
       io.to(`user_${companyId}`).emit('whatsapp:provider_status', check);
     }
 
+    const safeSettings = { ...updated };
+    delete safeSettings.gupshupApiKey;
+    delete safeSettings.apiKey;
+
     res.json({
       message: 'WhatsApp Business API configuration saved successfully',
       status: check.status,
       connectionMessage: check.message,
-      settings: updated
+      settings: safeSettings
     });
   } catch (error) {
     next(error);

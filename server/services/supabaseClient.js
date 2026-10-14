@@ -328,7 +328,8 @@ class SqliteQueryBuilder {
         db.prepare(sql).run(...values);
       }
 
-      const updatedRow = db.prepare(`SELECT * FROM ${this.tableName} WHERE ${conflictCol} = ?`).get(conflictVal);
+      const selectColumns = (this.selectCols && this.selectCols !== '*') ? this.selectCols : '*';
+      const updatedRow = db.prepare(`SELECT ${selectColumns} FROM ${this.tableName} WHERE ${conflictCol} = ?`).get(conflictVal);
       const res = formatRow(updatedRow);
       return { data: this.isSingle ? res : [res], error: null };
     }

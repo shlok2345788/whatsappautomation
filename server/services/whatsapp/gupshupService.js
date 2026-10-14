@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { supabase } = require('../supabaseClient');
+const { decrypt } = require('../security/encryptionService');
 
 /**
  * Normalizes phone numbers to standard Gupshup format (country code + number without +, spaces or special chars).
@@ -36,7 +37,13 @@ const getCredentials = async (companyId) => {
 
       if (settings) {
         if (settings.gupshupAppName) appName = settings.gupshupAppName;
-        if (settings.gupshupApiKey) apiKey = settings.gupshupApiKey;
+        if (settings.gupshupApiKey) {
+          try {
+            apiKey = decrypt(settings.gupshupApiKey);
+          } catch (e) {
+            console.warn(`[Gupshup] Failed to decrypt API key for company ${companyId}:`, e.message);
+          }
+        }
         if (settings.gupshupSourcePhone) sourcePhone = settings.gupshupSourcePhone;
         if (settings.gupshupTemplateId) templateId = settings.gupshupTemplateId;
       }
