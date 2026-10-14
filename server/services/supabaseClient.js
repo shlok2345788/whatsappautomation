@@ -86,26 +86,65 @@ class SqliteQueryBuilder {
     return this;
   }
 
-  or(conditionStr) {
-    const parts = conditionStr.split(',');
-    const subConds = [];
-    parts.forEach((p) => {
-      const match = p.match(/(.+)\.(ilike|eq)\.(.+)/);
-      if (match) {
-        const col = match[1];
-        const op = match[2];
-        let val = match[3].replace(/%/g, '');
-        if (op === 'ilike') {
-          subConds.push(`${col} LIKE ?`);
-          this.whereParams.push(`%${val}%`);
-        } else {
-          subConds.push(`${col} = ?`);
-          this.whereParams.push(sanitizeValue(val));
-        }
-      }
-    });
-    if (subConds.length > 0) {
+  search(columns, term) {
+    if (!term || typeof term !== 'string' || !Array.isArray(columns) || columns.length === 0) {
+      return this;
+    }
+    const cleanTerm = term.trim().slice(0, 100);
+    if (!cleanTerm) return this;
+
+    try {
+      const tableColumns = new Set(
+        db.prepare(`PRAGMA table_info(${this.tableName})`).all().map((c) => c.name)
+      );
+      const validCols = columns.filter((col) => typeof col === 'string' && /^[a-zA-Z0-9_]+$/.test(col) && tableColumns.has(col));
+      if (validCols.length === 0) return this;
+
+      const subConds = validCols.map((col) => `${this.tableName}.${col} LIKE ?`);
       this.whereConditions.push(`(${subConds.join(' OR ')})`);
+      validCols.forEach(() => {
+        this.whereParams.push(`%${cleanTerm}%`);
+      });
+    } catch (e) {
+      console.warn(`[SqliteQueryBuilder] Search error on ${this.tableName}:`, e.message);
+    }
+    return this;
+  }
+
+  or(conditionStr) {
+    if (!conditionStr || typeof conditionStr !== 'string') return this;
+
+    try {
+      const tableColumns = new Set(
+        db.prepare(`PRAGMA table_info(${this.tableName})`).all().map((c) => c.name)
+      );
+
+      const parts = conditionStr.split(',');
+      const subConds = [];
+      parts.forEach((p) => {
+        const match = p.match(/^([a-zA-Z0-9_]+)\.(ilike|eq)\.(.+)$/);
+        if (match) {
+          const col = match[1];
+          const op = match[2];
+          let val = match[3].replace(/%/g, '');
+
+          // Strictly allowlist column names against known table schema
+          if (tableColumns.has(col)) {
+            if (op === 'ilike') {
+              subConds.push(`${this.tableName}.${col} LIKE ?`);
+              this.whereParams.push(`%${val}%`);
+            } else {
+              subConds.push(`${this.tableName}.${col} = ?`);
+              this.whereParams.push(sanitizeValue(val));
+            }
+          }
+        }
+      });
+      if (subConds.length > 0) {
+        this.whereConditions.push(`(${subConds.join(' OR ')})`);
+      }
+    } catch (e) {
+      console.warn(`[SqliteQueryBuilder] or parse error on ${this.tableName}:`, e.message);
     }
     return this;
   }

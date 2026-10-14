@@ -16,8 +16,19 @@ const getHistory = async (req, res, next) => {
     if (status && status !== 'All') {
       query = query.eq('status', status);
     }
-    if (search) {
-      query = query.or(`contactName.ilike.%${search}%,phone.ilike.%${search}%,pdfFilename.ilike.%${search}%`);
+    if (search && typeof search === 'string') {
+      const cleanSearch = search.trim().slice(0, 100);
+      if (cleanSearch) {
+        if (typeof query.search === 'function') {
+          query = query.search(['contactName', 'phone', 'pdfFilename'], cleanSearch);
+        } else {
+          // Fallback for remote Supabase client: sanitize search expression
+          const sanitized = cleanSearch.replace(/[^a-zA-Z0-9\s+@._-]/g, ' ').trim();
+          if (sanitized) {
+            query = query.or(`contactName.ilike.%${sanitized}%,phone.ilike.%${sanitized}%,pdfFilename.ilike.%${sanitized}%`);
+          }
+        }
+      }
     }
 
     const { data: logs, error, count } = await query;
