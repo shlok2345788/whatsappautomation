@@ -18,6 +18,11 @@ dist/
 build/
 client/dist/
 client/build/
+connector/build/
+connector/__pycache__/
+*.spec
+*.pyc
+!connector/dist/
 *.tsbuildinfo
 
 # Logs & Debug Output

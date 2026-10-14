@@ -1,0 +1,12 @@
+{
+  "server_url": "http://localhost:5000",
+  "api_key": "YOUR_CONNECTOR_API_KEY_HERE",
+  "tally_host": "localhost",
+  "tally_port": 9000,
+  "company_name": "",
+  "statement_period": "01-Apr-2025 to 31-Mar-2026",
+  "from_date": "20250401",
+  "to_date": "20260331",
+  "schedule_interval_minutes": 60,
+  "auto_sync_on_startup": true
+}

@@ -1,0 +1,5 @@
+# Tally Prime Windows Connector Dependencies
+# All networking uses Python standard library urllib to minimize external dependencies.
+# The executable can run on any Windows machine without Python installed.
+requests>=2.31.0
+schedule>=1.2.0
