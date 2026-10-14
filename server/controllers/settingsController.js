@@ -91,7 +91,20 @@ const updateSettings = async (req, res, next) => {
     if (gupshupApiKey !== undefined && !gupshupApiKey.includes('••••')) {
       updates.gupshupApiKey = encrypt(gupshupApiKey.trim());
     }
-    if (delayBetweenMessages !== undefined) updates.delayBetweenMessages = Number(delayBetweenMessages);
+    if (delayBetweenMessages !== undefined) {
+      const delayNum = Number(delayBetweenMessages);
+      if (
+        isNaN(delayNum) ||
+        !Number.isInteger(delayNum) ||
+        delayNum < 1 ||
+        delayNum > 120
+      ) {
+        return res.status(400).json({
+          message: 'Delay between messages must be an integer between 1 and 120 seconds'
+        });
+      }
+      updates.delayBetweenMessages = delayNum;
+    }
     if (messageTemplate !== undefined) updates.messageTemplate = messageTemplate;
     if (autoRetryFailed !== undefined) updates.autoRetryFailed = Boolean(autoRetryFailed);
     updates.updatedAt = new Date().toISOString();
