@@ -1,115 +1,194 @@
-# Production Hosting & Infrastructure Decision Document
-**Project:** WhatsApp PDF Automation System (`whatsapp-web.js` + Puppeteer + Express + Socket.IO + React)
+# Production Hosting & Architecture Deployment Proposal
+**Project:** WhatsApp Ledger Automation System (WABA + Tally Connector + Express + React)  
+**Version:** 2.0 (Official Meta WABA & Tally Prime Architecture)  
+**Date:** October 2026  
 
 ---
 
 ## 1. Executive Summary
 
-This document evaluates the hosting requirements for deploying the **WhatsApp PDF Automation System**. 
+This proposal outlines the production infrastructure, deployment topology, and hosting recommendations for the **WhatsApp Ledger Automation System**. 
 
-- **Primary Recommendation:** **Hostinger KVM 2 VPS** (2 vCPU cores, 8 GB RAM, 100 GB NVMe).
-- **Core Conclusion:** Platform-as-a-Service (PaaS) providers like **Render** are fundamentally unsuitable for persistent WhatsApp automation. A dedicated **KVM Virtual Private Server (VPS)** is strictly necessary to maintain persistent WhatsApp sessions, run headless Chromium smoothly, and prevent dropped connections.
+The system has been modernized from legacy browser-based WhatsApp Web scraping (`whatsapp-web.js` / Puppeteer) to the **Official WhatsApp Business API (WABA via Gupshup Enterprise REST API)** paired with a **Local Windows Tally Connector daemon**.
 
----
-
-## 2. Why Render is Not Suitable for WhatsApp Automation
-
-Many developers attempt to deploy on Render (or Heroku/Vercel) initially, but encounter critical failures due to how WhatsApp Web and Puppeteer operate:
-
-### 1. The Sleep / Ephemeral Lifecycle Problem
-* **15-Minute Inactivity Spin-Down:** Render's free tier spins down after 15 minutes of inactivity. When it shuts down, **the headless Chromium process dies**.
-* **Constant Re-Scanning:** When a new request arrives and the server wakes up, WhatsApp Web has been terminated. The user is logged out and forced to scan the QR code again.
-* **CPU Throttling:** On PaaS tiers, if no incoming HTTP traffic is detected, CPU allocation is cut to near zero. WhatsApp Web’s background heartbeat fails, causing WhatsApp to mark the session as disconnected.
-
-### 2. Severe Memory Starvation (OOM Crashes)
-* **Render Free / Starter:** Allocates only **512 MB RAM**.
-* **Chromium Requirement:** A headless Chromium instance running WhatsApp Web requires **600 MB to 1.2 GB RAM** on its own, plus the Node.js runtime and PDF processing.
-* **Result:** On Render, Chromium routinely crashes with `SIGKILL / Exit code 137 (Out of Memory)` during browser launch or when generating PDFs.
-
-### 3. Ephemeral File System (Lost Sessions)
-* Render instances use ephemeral storage. Every time code is redeployed, the container is destroyed and rebuilt.
-* The `./whatsapp_sessions` directory and generated PDF files in `./uploads` are completely wiped unless expensive persistent disks are purchased and manually configured.
-
-### 4. Headless Chrome Native Dependency Headaches
-* Puppeteer requires OS-level shared libraries (`libatk`, `libcups`, `libxcomposite`, `libasound2`, `libgbm1`).
-* Cloud container build environments often fail or require fragile buildpack hacks to install these dependencies properly.
+### Key Architectural Shifts:
+- **No Headless Chromium Required in Production:** Dispatches utilize official Meta WABA REST endpoints, eliminating browser memory crashes, QR-code re-scanning, and session disconnections.
+- **SSRF-Free Local Tally Ingestion:** Local accounting data is extracted securely on client Windows machines by `TallyConnector.exe` and pushed over authenticated HTTPS to the cloud API.
+- **Lightweight, High-Density Hosting:** Without headless Chrome RAM requirements, a cost-effective VPS (1–2 vCPUs, 2–4 GB RAM) supports thousands of daily ledger transmissions effortlessly.
 
 ---
 
-## 3. Why a KVM VPS is Required
+## 2. Production System Architecture
 
-A KVM (Kernel-based Virtual Machine) VPS provides dedicated, virtualized hardware with a persistent Linux OS (Ubuntu 22.04 / 24.04 LTS):
+```mermaid
+graph TD
+    subgraph "Client Premises (Windows)"
+        TP[Tally Prime\nlocalhost:9000] -->|Local XML/HTTP| TC[Tally Connector Daemon\nTallyConnector.exe]
+        TC -->|HTTPS POST with API Key & HMAC| GW[Cloud API Gateway / Nginx]
+    end
 
-1. **24/7 Always-On Background Processes:** Node.js runs under `PM2` continuously. The browser process never sleeps, keeping the WhatsApp connection alive indefinitely.
-2. **Persistent Local Disk:** The `./whatsapp_sessions/` authentication tokens and `./uploads/` files stay intact across reboots and code updates.
-3. **Full Root Access:** Full control to install Google Chrome, graphics libraries, swap files, and custom system services.
-4. **Dedicated System Resources:** No CPU throttling or container memory capping by a shared orchestrator.
+    subgraph "Production Cloud VPS (Ubuntu 24.04 LTS)"
+        GW -->|Reverse Proxy / SSL| BE[Node.js / Express Backend\nPM2 Managed]
+        BE --> DB[(SQLite WAL / Persistent DB)]
+        BE --> UPL[Local Storage /uploads/pdfs\nTenant Isolated]
+        SPA[React Web Client\nStatic Dist / Nginx] -->|REST & WebSockets| GW
+    end
 
----
+    subgraph "Meta / WhatsApp Cloud"
+        BE -->|HTTPS REST API| GS[Gupshup WABA Gateway]
+        GS -->|Template & Document Delivery| WA[Customer WhatsApp Device]
+        GS -->|Delivery Webhooks / HMAC Signed| GW
+    end
+```
 
-## 4. Hardware Comparison: KVM 1 vs KVM 2
-
-| Specification | KVM 1 | KVM 2 (Recommended) | Impact on this Application |
-| :--- | :--- | :--- | :--- |
-| **vCPU Cores** | **1 vCPU Core** | **2 vCPU Cores** | Chromium needs 1 core for JS/DOM rendering. 2 cores prevents Node.js API & Socket.IO from freezing. |
-| **RAM** | **4 GB** | **8 GB** | WhatsApp Web + Chrome + Node.js + OS uses ~2.5–3 GB. 8 GB provides complete safety against leaks & spikes. |
-| **Storage** | 50 GB NVMe | 100 GB NVMe | Plenty of storage for PDF batches, session cache, and log files. |
-| **Bandwidth** | 4 TB | 8 TB | Ample throughput for sending media, PDFs, and client assets. |
-| **Dedicated IP** | Included | Included | Fixed static IP; avoids WhatsApp security flags from changing IPs. |
-
-### Why 1 vCPU (KVM 1) is a Bottleneck:
-* Headless Chromium running WhatsApp Web is a heavy single-page application.
-* During initialization, QR code generation, or PDF generation, Chromium spikes CPU usage to **100%**.
-* On a single-core machine (KVM 1), Node.js must share that same core with Chrome. The event loop stalls, leading to:
-  * Delayed WebSocket emits to the client.
-  * Socket timeouts and random WhatsApp disconnects.
-  * API latency for dashboard users.
-* **On KVM 2**, Chromium runs on one core while Node.js and Express handle web requests on the other, ensuring 100% responsive performance.
-
----
-
-## 5. Pricing Breakdown (Including Taxes)
-
-Based on the official Hostinger checkout data:
-
-### Plan Cost Overview
-
-| Plan | Billing Cycle | Base Price | Taxes | **Total Charged** | Effective Monthly Cost |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **KVM 1** | **1 Month** | $9.99 | $1.80 | **$11.79** | **$11.79 / mo** |
-| **KVM 2** | **1 Month** | $13.99 | $2.52 | **$16.51** | **$16.51 / mo** |
-| **KVM 2** | **12 Months** | $119.88 | $21.58 | **$141.46** | **$11.78 / mo** |
-| **KVM 2** | **24 Months** | $215.76 | $38.84 | **$254.60** | **$10.60 / mo** |
-
-*(Note: 12-month and 24-month plans also include a **free domain for 1 year** valued at $74.99).*
+### Component Breakdown:
+1. **Frontend Dashboard:** React SPA (Vite) providing multi-tenant invoice matching, ledger reconciliation, send queue controls, billing analytics, and audit log exploration.
+2. **Cloud Backend Server:** Node.js Express service running behind Nginx. Manages tenant accounts, signed HMAC PDF downloads, rate-limited queues, SQLite multi-company storage, and Gupshup WABA dispatching.
+3. **Windows Tally Connector:** Standalone Windows background daemon (`connector/tally_connector.py` / PyInstaller executable) installed on the client machine running Tally Prime. Extracts ledger balances and transaction rows, generates signed verification digests, and uploads payloads securely to `/api/tally/upload-ledgers`.
+4. **Meta WhatsApp Business API (Gupshup):** Official Cloud API delivering verified PDF document templates with real-time status callbacks (Sent, Delivered, Read, Failed).
 
 ---
 
-## 6. Financial & Value Analysis
+## 3. Why the Legacy Architecture Was Retired
 
-1. **Monthly Comparison (1-Month Rolling):**
-   - KVM 1: **$11.79**
-   - KVM 2: **$16.51**
-   - **Difference:** Only **$4.72 / month** (~₹390 / month).
-   - For an extra $4.72, you get **2x the CPU (2 vCPU vs 1 vCPU)** and **2x the RAM (8 GB vs 4 GB)**.
-
-2. **The 12-Month Sweet Spot:**
-   - If opting for the **12-month billing period**, KVM 2 drops to **$11.78 / month** (all-inclusive with tax).
-   - This means **KVM 2 on a 1-year plan costs virtually the exact same per month as KVM 1 on a monthly plan**, while delivering double the hardware performance plus a free domain.
+| Legacy Scraper Architecture (`whatsapp-web.js`) | Official WABA & Connector Architecture (Current) |
+| :--- | :--- |
+| **High Memory Footprint:** Headless Chromium required 1–2 GB RAM per instance, leading to Out-Of-Memory (OOM) crashes on low-tier servers. | **Ultra-Low Memory:** Pure REST and lightweight PDF streaming require < 150 MB RAM total. |
+| **Session Loss:** Inactivity, IP changes, or server restarts terminated the session, demanding manual QR-code re-scans. | **Perpetual Authorization:** API tokens and service credentials remain valid permanently without manual human intervention. |
+| **Meta Policy Risk:** Unofficial scraping violated WhatsApp Terms of Service, risking permanent phone number bans. | **100% Policy Compliant:** Official Meta WABA integration ensures zero risk of account bans or delivery blocks. |
+| **Intranet SSRF Hazard:** Cloud server attempted to connect to `localhost:9000`, vulnerable to SSRF. | **Local Push Model:** Cloud server never makes outbound intranet requests. Local Windows Connector securely pushes data outwards over TLS. |
 
 ---
 
-## 7. Final Recommendation & Implementation Path
+## 4. Hardware & Infrastructure Sizing
 
-### Verdict: Select **Hostinger KVM 2**
+Because headless browser emulation has been completely eliminated from the message dispatch pipeline, production server resource requirements are substantially reduced:
 
-- **Why:** WhatsApp automation relies on persistent WebSocket heartbeats and heavy Chromium processes. KVM 2 completely eliminates crashes, memory leaks, and CPU locks.
-- **Recommended Period:**
-  - If testing short-term: **1-Month Plan ($16.51 total)**.
-  - If building for long-term production: **12-Month Plan ($141.46 total)** for maximum value ($11.78/mo effective rate + free domain).
+| Component | Minimum Specification | Recommended Specification |
+| :--- | :--- | :--- |
+| **vCPU Cores** | 1 vCPU | **2 vCPUs** |
+| **Memory (RAM)** | 2 GB | **4 GB** (8 GB for multi-tenant heavy batches) |
+| **Storage** | 25 GB NVMe SSD | **50–100 GB NVMe SSD** |
+| **Bandwidth** | 1 TB / month | **2–4 TB / month** |
+| **Operating System** | Ubuntu 22.04 LTS (64-bit) | **Ubuntu 24.04 LTS (64-bit)** |
 
-### Next Deployment Steps once VPS is ready:
-1. Select OS: **Ubuntu 24.04 LTS (64-bit)**.
-2. Install Node.js (v20 LTS), Google Chrome dependencies, and PM2.
-3. Configure PM2 process management to keep the WhatsApp backend running 24/7.
-4. Set up Nginx reverse proxy with SSL (Let's Encrypt Certbot) for secure API and WebSocket routing.
+---
+
+## 5. Hosting Provider Comparison & Recommendations
+
+### Option 1: Hostinger KVM 2 VPS (Recommended for Value)
+- **Specs:** 2 vCPUs, 8 GB RAM, 100 GB NVMe SSD, 8 TB Bandwidth, Dedicated IPv4.
+- **Pricing:** ~$11.78 / month (annual commitment).
+- **Pros:** Exceptional price-to-performance ratio, automated daily snapshots, unified DNS & SSL management, dedicated static IP.
+- **Verdict:** **Top recommendation** for small-to-medium enterprise rollouts.
+
+### Option 2: DigitalOcean / Hetzner Cloud (Recommended for DevOps Teams)
+- **DigitalOcean Basic Droplet:** 2 vCPUs, 4 GB RAM, 80 GB SSD (~$24 / month).
+- **Hetzner Cloud CPX21:** 3 vCPUs, 4 GB RAM, 80 GB NVMe (~€8.50 / month).
+- **Pros:** Fast provisioning, floating IPs, granular firewall rules, robust API.
+
+### Option 3: AWS Lightsail
+- **Specs:** 2 vCPUs, 4 GB RAM, 80 GB SSD (~$20 / month).
+- **Pros:** Integrated AWS VPC peering, managed SSL certificates, simple upgrade path to EC2/RDS.
+
+---
+
+## 6. Security, Hardening & Operational Invariants
+
+To maintain production readiness and data protection compliance:
+
+1. **Strict Transport Security (TLS 1.3):** All public endpoints must terminate TLS via Nginx with Let's Encrypt certificates. HTTP traffic is unconditionally redirected to HTTPS.
+2. **AES-256-GCM Encryption at Rest:** Sensitive provider API keys, webhook signing secrets, and connector tokens are encrypted with authenticated ciphers before persistence.
+3. **Signed HMAC PDF URLs:** Direct filesystem paths are never exposed. Media files are downloaded by WhatsApp servers using cryptographic URLs with 15-minute expiration bound to `pdfId` and `company_id`.
+4. **Idempotent Webhook Ingestion:** Gupshup status webhooks are validated with HMAC-SHA256 signatures and processed idempotently to prevent duplicate updates or out-of-order state regression.
+5. **Automated PDF Retention Cleanup:** A configurable retention engine (`PDF_RETENTION_DAYS`) automatically unlinks expired PDFs and removes stale database records, reclaiming disk space without administrative overhead.
+6. **Immutable Audit Logging:** All security operations, settings alterations, batch approvals, and dispatches are appended to a tamper-resistant audit trail.
+
+---
+
+## 7. Step-by-Step Production Deployment Guide
+
+### Phase 1: Server Provisioning
+```bash
+# Update Ubuntu packages
+sudo apt update && sudo apt upgrade -y
+
+# Install Node.js 20 LTS & Build Essentials
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs nginx certbot python3-certbot-nginx git build-essential
+
+# Install PM2 Process Manager globally
+sudo npm install -g pm2
+```
+
+### Phase 2: Application Deployment
+```bash
+# Clone repository
+git clone <repository_url> /var/www/whatsapp-ledger
+cd /var/www/whatsapp-ledger
+
+# Install root & server dependencies
+npm install --prefix server
+npm install --prefix client
+
+# Build production React frontend bundle
+npm run build --prefix client
+
+# Configure environment variables
+cp server/.env.example server/.env
+nano server/.env
+```
+
+### Phase 3: Nginx & SSL Configuration
+Create `/etc/nginx/sites-available/whatsapp-ledger`:
+```nginx
+server {
+    server_name app.yourdomain.com;
+
+    # React Static Bundle
+    location / {
+        root /var/www/whatsapp-ledger/client/dist;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # API Proxy
+    location /api/ {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Socket.IO WebSocket Proxy
+    location /socket.io/ {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }
+}
+```
+
+```bash
+# Enable Nginx site and obtain SSL certificate
+sudo ln -s /etc/nginx/sites-available/whatsapp-ledger /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d app.yourdomain.com
+```
+
+### Phase 4: PM2 Process Management
+```bash
+cd /var/www/whatsapp-ledger/server
+pm2 start server.js --name "whatsapp-ledger-api" -i max
+pm2 save
+pm2 startup
+```
+
+### Phase 5: Client Windows Connector Setup
+1. On each client workstation running Tally Prime (port 9000), install `TallyConnector.exe` or python script.
+2. Generate an authorized Connector API Key in the web dashboard under **Tally Settings**.
+3. Configure `config.json` with the cloud API URL (`https://app.yourdomain.com`) and connector key.
+4. Run connector as a Windows Service (via NSSM or Windows Task Scheduler) for continuous automated synchronization.
