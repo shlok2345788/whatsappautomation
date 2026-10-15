@@ -643,6 +643,188 @@ const resumeBatch = async (companyId, batchId, io) => {
   );
 };
 
+const prepareBatchForApproval = async (companyId, rawQueueItems, customMessageTemplate, submittedBy) => {
+  const queueItems = await validateAndResolveQueueItems(companyId, rawQueueItems);
+  const now = new Date().toISOString();
+
+  let { data: settingsRow } = await supabase
+    .from('settings')
+    .select('*')
+    .eq('company_id', companyId)
+    .single();
+
+  const templateToUse = customMessageTemplate || (settingsRow ? settingsRow.messageTemplate : '') || 'Hello {{name}}';
+
+  const { data: batchRecord, error: batchErr } = await supabase
+    .from('queue_batches')
+    .insert({
+      company_id: companyId,
+      status: 'pending_approval',
+      approvalStatus: 'pending',
+      totalItems: queueItems.length,
+      processedItems: 0,
+      sentCount: 0,
+      failedCount: 0,
+      skippedCount: 0,
+      simulatedCount: 0,
+      createdAt: now,
+      updatedAt: now
+    })
+    .select()
+    .single();
+
+  if (batchErr || !batchRecord) {
+    throw new Error(`Failed to create queue batch: ${batchErr?.message || 'Unknown error'}`);
+  }
+
+  const batchId = batchRecord.id;
+
+  for (const item of queueItems) {
+    const itemMsgText = formatTemplate(templateToUse, { name: item.name, phone: item.phone });
+    await supabase.from('queue_items').insert({
+      batch_id: batchId,
+      company_id: companyId,
+      contactId: item.contactId || null,
+      recipientName: item.name,
+      recipientPhone: item.phone,
+      pdfId: item.pdfId,
+      pdfFilename: item.pdfFilename,
+      pdfPath: item.pdfPath,
+      fileHash: item.fileHash || '',
+      messageText: itemMsgText,
+      status: 'pending',
+      deliveryStatus: 'pending',
+      attemptCount: 0,
+      providerMessageId: '',
+      errorReason: '',
+      approvalRef: null,
+      createdAt: now,
+      updatedAt: now
+    });
+  }
+
+  return {
+    batchId,
+    companyId,
+    totalItems: queueItems.length,
+    approvalStatus: 'pending',
+    status: 'pending_approval',
+    createdAt: now
+  };
+};
+
+const approveBatch = async (companyId, batchId, managerId) => {
+  const { data: batch, error } = await supabase
+    .from('queue_batches')
+    .select('*')
+    .eq('id', batchId)
+    .eq('company_id', companyId)
+    .single();
+
+  if (error || !batch) {
+    throw new Error(`Queue batch #${batchId} not found`);
+  }
+
+  if (batch.approvalStatus === 'rejected') {
+    throw new Error(`Cannot approve batch #${batchId} because it was previously rejected`);
+  }
+
+  const now = new Date().toISOString();
+  const approvalRef = `appr_${batchId}_${Date.now()}`;
+
+  await supabase
+    .from('queue_batches')
+    .update({
+      approvalStatus: 'approved',
+      status: 'ready',
+      approvedBy: String(managerId || 'Manager'),
+      approvedAt: now,
+      updatedAt: now
+    })
+    .eq('id', batchId);
+
+  await supabase
+    .from('queue_items')
+    .update({
+      approvalRef,
+      updatedAt: now
+    })
+    .eq('batch_id', batchId);
+
+  return {
+    batchId,
+    approvalStatus: 'approved',
+    approvedBy: String(managerId || 'Manager'),
+    approvedAt: now,
+    approvalRef
+  };
+};
+
+const rejectBatch = async (companyId, batchId, managerId, reason) => {
+  const { data: batch, error } = await supabase
+    .from('queue_batches')
+    .select('*')
+    .eq('id', batchId)
+    .eq('company_id', companyId)
+    .single();
+
+  if (error || !batch) {
+    throw new Error(`Queue batch #${batchId} not found`);
+  }
+
+  const now = new Date().toISOString();
+  await supabase
+    .from('queue_batches')
+    .update({
+      approvalStatus: 'rejected',
+      status: 'rejected',
+      approvedBy: String(managerId || 'Manager'),
+      rejectionReason: reason || 'Rejected by manager',
+      updatedAt: now
+    })
+    .eq('id', batchId);
+
+  return {
+    batchId,
+    approvalStatus: 'rejected',
+    rejectionReason: reason || 'Rejected by manager'
+  };
+};
+
+const dispatchBatch = async (companyId, batchId, io) => {
+  const { data: batch, error } = await supabase
+    .from('queue_batches')
+    .select('*')
+    .eq('id', batchId)
+    .eq('company_id', companyId)
+    .single();
+
+  if (error || !batch) {
+    throw new Error(`Queue batch #${batchId} not found`);
+  }
+
+  if (batch.approvalStatus !== 'approved') {
+    throw new Error(`Dispatch denied: Batch #${batchId} requires managerial approval before dispatch (current approval status: ${batch.approvalStatus})`);
+  }
+
+  return resumeBatch(companyId, batchId, io);
+};
+
+const listBatches = async (companyId, filter = {}) => {
+  let query = supabase
+    .from('queue_batches')
+    .select('*')
+    .eq('company_id', companyId);
+
+  if (filter.approvalStatus) {
+    query = query.eq('approvalStatus', filter.approvalStatus);
+  }
+
+  const { data, error } = await query.order('createdAt', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
 const cancelQueue = async (companyId) => {
   if (activeQueues[companyId]) {
     activeQueues[companyId].isCancelled = true;
@@ -669,6 +851,11 @@ module.exports = {
   validateAndResolveQueueItems,
   processSendQueue,
   resumeBatch,
+  prepareBatchForApproval,
+  approveBatch,
+  rejectBatch,
+  dispatchBatch,
+  listBatches,
   cancelQueue,
   getQueueStatus,
   recoverOrphanedQueues,

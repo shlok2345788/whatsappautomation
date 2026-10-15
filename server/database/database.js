@@ -322,6 +322,11 @@ const initDatabase = () => {
   addColumnSafely('message_logs', "deliveryStatus TEXT DEFAULT ''");
   addColumnSafely('message_logs', "isSimulation INTEGER DEFAULT 0");
   addColumnSafely('queue_batches', "simulatedCount INTEGER DEFAULT 0");
+  addColumnSafely('queue_batches', "approvalStatus TEXT DEFAULT 'approved'");
+  addColumnSafely('queue_batches', "approvedBy TEXT DEFAULT NULL");
+  addColumnSafely('queue_batches', "approvedAt TEXT DEFAULT NULL");
+  addColumnSafely('queue_batches', "rejectionReason TEXT DEFAULT NULL");
+  addColumnSafely('settings', "requireApproval INTEGER DEFAULT 0");
 
   console.log('[SQLite Database] Multi-company Schema Initialized at:', dbPath);
 };
