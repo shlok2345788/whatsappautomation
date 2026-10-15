@@ -302,6 +302,22 @@ const initDatabase = () => {
     CREATE INDEX IF NOT EXISTS idx_queue_items_batch ON queue_items(batch_id, status);
     CREATE INDEX IF NOT EXISTS idx_queue_items_company_status ON queue_items(company_id, status);
     CREATE INDEX IF NOT EXISTS idx_queue_items_provider_msg ON queue_items(providerMessageId);
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id TEXT NOT NULL,
+      userId TEXT DEFAULT '',
+      action TEXT NOT NULL,
+      category TEXT NOT NULL,
+      details TEXT DEFAULT '{}',
+      ipAddress TEXT DEFAULT '',
+      userAgent TEXT DEFAULT '',
+      status TEXT DEFAULT 'SUCCESS',
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_company_date ON audit_logs(company_id, createdAt);
+    CREATE INDEX IF NOT EXISTS idx_audit_category ON audit_logs(company_id, category);
+    CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(company_id, action);
   `);
 
   // Run incremental column additions safely if tables existed

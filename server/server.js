@@ -25,6 +25,7 @@ const settingsRoutes = require('./routes/settingsRoutes');
 const webhookRoutes = require('./routes/webhookRoutes');
 const tallyRoutes = require('./routes/tallyRoutes');
 const billingRoutes = require('./routes/billingRoutes');
+const auditRoutes = require('./routes/auditRoutes');
 const { storageProvider } = require('./services/supabaseClient');
 const { startRetentionSchedule } = require('./services/pdf/pdfRetentionService');
 
@@ -113,6 +114,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/webhook', webhookRoutes);
 app.use('/api/tally', tallyRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/audit', auditRoutes);
 
 // Comprehensive Observability & Health Check endpoint
 app.get('/api/health', (req, res) => {
