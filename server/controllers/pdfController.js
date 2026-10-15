@@ -203,10 +203,45 @@ const deletePdfFiles = async (req, res, next) => {
   }
 };
 
+const { cleanupExpiredPdfs, getRetentionStatus } = require('../services/pdf/pdfRetentionService');
+
+const getRetentionSummary = async (req, res, next) => {
+  try {
+    const companyId = req.companyId;
+    const { retentionDays } = req.query || {};
+    const status = await getRetentionStatus({
+      companyId,
+      retentionDays: retentionDays ? parseInt(retentionDays, 10) : undefined
+    });
+    res.json(status);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const triggerRetentionCleanup = async (req, res, next) => {
+  try {
+    const companyId = req.companyId;
+    const { retentionDays } = req.body || {};
+    const result = await cleanupExpiredPdfs({
+      companyId,
+      retentionDays: retentionDays ? parseInt(retentionDays, 10) : undefined
+    });
+    res.json({
+      message: `Cleaned up ${result.deletedFiles} expired PDF files`,
+      ...result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   downloadPdfFile,
   downloadSignedPdf,
   uploadFiles,
   getPdfFiles,
-  deletePdfFiles
+  deletePdfFiles,
+  getRetentionSummary,
+  triggerRetentionCleanup
 };
