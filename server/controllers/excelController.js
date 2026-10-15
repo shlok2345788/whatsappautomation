@@ -10,7 +10,7 @@ const uploadAndParseExcel = async (req, res, next) => {
     }
 
     filePath = req.file.path;
-    const parsedData = excelService.parseExcelFile(filePath);
+    const parsedData = await excelService.parseExcelFile(filePath);
 
     res.json(parsedData);
   } catch (error) {

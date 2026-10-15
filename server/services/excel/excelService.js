@@ -1,15 +1,15 @@
-const xlsx = require('xlsx');
+const ExcelJS = require('exceljs');
 const fs = require('fs');
 
 const normalizePhoneNumber = (rawNumber) => {
   if (rawNumber === null || rawNumber === undefined || rawNumber === '') {
     return { mobile: '', isValid: false, reason: 'Empty mobile number' };
   }
-  
+
   let str = String(rawNumber).trim();
   // Strip spaces, dashes, parentheses, dots
   let digitsOnly = str.replace(/[^\d+]/g, '');
-  
+
   if (digitsOnly.startsWith('+')) {
     digitsOnly = digitsOnly.substring(1);
   }
@@ -18,12 +18,12 @@ const normalizePhoneNumber = (rawNumber) => {
   if (digitsOnly.length === 10 && /^[6-9]/.test(digitsOnly)) {
     return { mobile: '91' + digitsOnly, isValid: true, reason: 'Valid' };
   }
-  
+
   // 11 digits starting with 0 followed by 6, 7, 8, 9 -> 91 + 10 digits
   if (digitsOnly.length === 11 && digitsOnly.startsWith('0') && /^[6-9]/.test(digitsOnly.substring(1))) {
     return { mobile: '91' + digitsOnly.substring(1), isValid: true, reason: 'Valid' };
   }
-  
+
   // 12 digits starting with 91 followed by 6, 7, 8, 9 -> valid Indian
   if (digitsOnly.length === 12 && digitsOnly.startsWith('91') && /^[6-9]/.test(digitsOnly.substring(2))) {
     return { mobile: digitsOnly, isValid: true, reason: 'Valid' };
@@ -37,20 +37,61 @@ const normalizePhoneNumber = (rawNumber) => {
   return { mobile: digitsOnly || str, isValid: false, reason: 'Invalid mobile number format' };
 };
 
-const parseExcelFile = (filePath) => {
+const parseExcelFile = async (filePath) => {
   if (!filePath || !fs.existsSync(filePath)) {
     throw new Error('Uploaded Excel file could not be found');
   }
 
-  const workbook = xlsx.readFile(filePath, { cellDates: false });
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName || !workbook.Sheets[sheetName]) {
+  const workbook = new ExcelJS.Workbook();
+  const ext = (filePath.split('.').pop() || '').toLowerCase();
+
+  if (ext === 'csv') {
+    await workbook.csv.readFile(filePath);
+  } else {
+    try {
+      await workbook.xlsx.readFile(filePath);
+    } catch (readErr) {
+      try {
+        await workbook.csv.readFile(filePath);
+      } catch (csvErr) {
+        throw new Error(`Failed to read spreadsheet: ${readErr.message}`);
+      }
+    }
+  }
+
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) {
     throw new Error('Excel file does not contain a readable worksheet');
   }
-  const worksheet = workbook.Sheets[sheetName];
-  
-  // Convert sheet to json array of arrays to find header row
-  const rows = xlsx.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+
+  const rows = [];
+  worksheet.eachRow({ includeEmpty: false }, (row) => {
+    const rowValues = [];
+    const cellCount = Math.max(row.cellCount || 0, Array.isArray(row.values) ? row.values.length : 0);
+    for (let c = 1; c <= cellCount; c++) {
+      const cell = row.getCell(c);
+      let val = '';
+      if (cell && cell.value !== null && cell.value !== undefined) {
+        if (typeof cell.value === 'object') {
+          if (cell.value.result !== undefined) {
+            val = String(cell.value.result);
+          } else if (cell.value.text !== undefined) {
+            val = String(cell.value.text);
+          } else if (cell.value.richText) {
+            val = cell.value.richText.map((t) => t.text).join('');
+          } else {
+            val = String(cell.value);
+          }
+        } else {
+          val = String(cell.value);
+        }
+      }
+      rowValues.push(val.trim());
+    }
+    if (rowValues.some((v) => v !== '')) {
+      rows.push(rowValues);
+    }
+  });
 
   if (!rows || rows.length === 0) {
     throw new Error('Excel file is empty');
@@ -111,7 +152,7 @@ const parseExcelFile = (filePath) => {
     if (!rawName && !rawMobile) continue;
 
     const norm = normalizePhoneNumber(rawMobile);
-    
+
     let statusMessage = norm.reason;
     let isValid = norm.isValid;
 
