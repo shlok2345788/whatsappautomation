@@ -141,51 +141,7 @@ const updateSettings = async (req, res, next) => {
   }
 };
 
-const updateProfile = async (req, res, next) => {
-  try {
-    const companyId = req.companyId;
-    const { name, email, currentPassword, newPassword } = req.body;
-
-    // Update Supabase Auth user metadata and/or email/password
-    const authUpdates = {};
-    if (email) authUpdates.email = email;
-    if (newPassword) {
-      if (!currentPassword) {
-        return res.status(400).json({ message: 'Current password is required to set a new password' });
-      }
-      authUpdates.password = newPassword;
-    }
-    if (name) {
-      authUpdates.data = { company_name: name };
-    }
-
-    if (Object.keys(authUpdates).length > 0) {
-      const { error: authError } = await supabase.auth.admin.updateUserById(companyId, authUpdates);
-      if (authError) throw authError;
-    }
-
-    // Update the companies table
-    const companyUpdates = {};
-    if (name) companyUpdates.company_name = name;
-    if (email) companyUpdates.email = email;
-
-    if (Object.keys(companyUpdates).length > 0) {
-      const { data: updatedCompany, error } = await supabase
-        .from('companies')
-        .update(companyUpdates)
-        .eq('id', companyId)
-        .select('id, company_name, email, created_at')
-        .single();
-
-      if (error) throw error;
-      return res.json({ message: 'Profile updated successfully', user: updatedCompany });
-    }
-
-    res.json({ message: 'Profile updated successfully' });
-  } catch (error) {
-    next(error);
-  }
-};
+const { updateProfile } = require('./authController');
 
 module.exports = {
   getSettings,

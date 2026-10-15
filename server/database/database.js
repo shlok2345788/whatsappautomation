@@ -28,6 +28,32 @@ const initDatabase = () => {
     }
   };
 
+  const checkCompaniesNeedsMigration = () => {
+    try {
+      const col = db.prepare('PRAGMA table_info(companies)').all().find((c) => c.name === 'id');
+      return col && col.type === 'INTEGER';
+    } catch (e) {
+      return false;
+    }
+  };
+
+  if (checkCompaniesNeedsMigration()) {
+    console.log('[SQLite Migration] Migrating companies to support TEXT string IDs...');
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS companies_new (
+        id TEXT PRIMARY KEY,
+        company_name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        password_hash TEXT DEFAULT '',
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+      INSERT OR IGNORE INTO companies_new SELECT CAST(id AS TEXT), company_name, email, COALESCE(password_hash, ''), COALESCE(created_at, datetime('now')), datetime('now') FROM companies;
+      DROP TABLE companies;
+      ALTER TABLE companies_new RENAME TO companies;
+    `);
+  }
+
   if (checkTableNeedsMigration('pdf_files')) {
     console.log('[SQLite Migration] Migrating pdf_files to remove obsolete companies foreign key...');
     db.exec(`
@@ -118,6 +144,14 @@ const initDatabase = () => {
 
   // Create tables if starting fresh
   db.exec(`
+    CREATE TABLE IF NOT EXISTS companies (
+      id TEXT PRIMARY KEY,
+      company_name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS contacts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       company_id TEXT NOT NULL,

@@ -74,14 +74,30 @@ const Settings = () => {
     setSuccessMsg('');
 
     try {
-      const res = await API.put('/settings/profile', {
-        name,
-        email,
-        currentPassword,
-        newPassword
-      });
+      let res;
+      try {
+        res = await API.put('/auth/profile', {
+          name,
+          email,
+          currentPassword,
+          newPassword
+        });
+      } catch (err) {
+        if (err.response?.status === 404) {
+          res = await API.put('/settings/profile', {
+            name,
+            email,
+            currentPassword,
+            newPassword
+          });
+        } else {
+          throw err;
+        }
+      }
 
-      updateUserProfile(res.data.user);
+      if (res.data?.user) {
+        updateUserProfile(res.data.user);
+      }
       setSuccessMsg('Profile updated successfully');
       setCurrentPassword('');
       setNewPassword('');
