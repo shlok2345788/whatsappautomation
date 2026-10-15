@@ -24,10 +24,15 @@ const historyRoutes = require('./routes/historyRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const webhookRoutes = require('./routes/webhookRoutes');
 const tallyRoutes = require('./routes/tallyRoutes');
+const billingRoutes = require('./routes/billingRoutes');
 const { storageProvider } = require('./services/supabaseClient');
+const { startRetentionSchedule } = require('./services/pdf/pdfRetentionService');
 
 // Initialize DB Connection
 connectDB();
+
+// Start periodic PDF retention and cleanup
+startRetentionSchedule();
 
 // Process-level error logging
 process.on('unhandledRejection', (reason) => {
@@ -41,16 +46,32 @@ process.on('uncaughtException', (err) => {
 const app = express();
 const server = http.createServer(app);
 
-// Configure Socket.IO
-const allowedOrigins = [
-  process.env.CLIENT_URL,
-  'https://whatsappautomation-eight.vercel.app',
-  'http://localhost:5173',
-].filter(Boolean);
+// Strict CORS Origins: parse configured CLIENT_URL and allow standard local dev ports
+const parseAllowedOrigins = () => {
+  const origins = [];
+  if (process.env.CLIENT_URL) {
+    process.env.CLIENT_URL.split(',').map((s) => s.trim()).filter(Boolean).forEach((o) => origins.push(o));
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    origins.push('http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000');
+  }
+  return [...new Set(origins)];
+};
+
+const allowedOrigins = parseAllowedOrigins();
+
+const corsOriginHandler = (origin, callback) => {
+  // Allow non-browser requests (tools, server-to-server) with no origin header
+  if (!origin) return callback(null, true);
+  if (allowedOrigins.includes(origin)) {
+    return callback(null, true);
+  }
+  return callback(new Error(`CORS policy rejection: Origin ${origin} is not allowed`));
+};
 
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: corsOriginHandler,
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
   }
@@ -61,8 +82,10 @@ app.set('io', io);
 
 // Middleware
 app.use(cors({
-  origin: allowedOrigins,
-  credentials: true
+  origin: corsOriginHandler,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-connector-key']
 }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -89,6 +112,7 @@ app.use('/api/history', historyRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/webhook', webhookRoutes);
 app.use('/api/tally', tallyRoutes);
+app.use('/api/billing', billingRoutes);
 
 // Comprehensive Observability & Health Check endpoint
 app.get('/api/health', (req, res) => {
